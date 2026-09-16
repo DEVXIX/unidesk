@@ -1,0 +1,106 @@
+===============================================================================
+  unidesk - desktop widgets, a dock and search for Windows 11
+===============================================================================
+
+Thanks for installing unidesk! It adds three things to your desktop:
+
+  - WIDGETS on your wallpaper: time, clock, music with synced lyrics, weather,
+    CPU / RAM / GPU, calendar, profile card, GitHub/Gitea activity, pictures.
+  - A DOCK at the bottom that replaces the Windows taskbar.
+  - SEARCH for your apps, settings, maths, files and the web.
+
+Colours follow the album art of the song you're playing (Material You).
+You can change that, and nearly everything else, in Settings.
+
+
+-------------------------------------------------------------------------------
+  KEYBOARD SHORTCUTS
+-------------------------------------------------------------------------------
+
+  Alt + Space      Open search (type, Up/Down to choose, Enter to open,
+                   Esc to close). Try "calc", "wifi" or "12*7".
+  Ctrl + Alt + E   Turn edit mode on/off (move, resize, add, remove widgets)
+  Esc              Close search
+
+
+-------------------------------------------------------------------------------
+  MOUSE
+-------------------------------------------------------------------------------
+
+  Widgets
+    Right-click any widget  ->  its options (size, style, colours...)
+    In edit mode:
+      drag a widget            move it (snaps to a grid)
+      drag its corner handle   make it bigger or smaller
+      click it                 open its options
+      red bin button           remove it (click twice)
+      "Add widget" (top)       bring back or add widgets
+      gear button (top)        Settings (look, dock, search, weather, accounts)
+      "Done"                   leave edit mode
+
+  Dock
+    Click an app               open / focus it; click again to minimise
+    App with several windows   shows live previews so you can pick one
+    Middle-click an app        open a new window
+    Right-click an app         its windows, pin/unpin, close
+    Drag a pinned app          reorder the dock
+    Click the song             player with seek bar and lyrics
+      middle-click the song    play / pause
+      scroll on the song       next / previous track
+    Search box                 unidesk search
+    ^ arrow                    hidden tray icons (Discord, Steam, ...)
+    ENG                        switch keyboard language
+    Network / volume icons     Quick Settings (scroll to change volume)
+    Clock                      notifications and calendar
+
+  Tray icon (four small squares, bottom-right tray)
+    Double-click               edit mode
+    Right-click                edit config, start with Windows,
+                               re-import taskbar pins, quit
+
+
+-------------------------------------------------------------------------------
+  FIRST-TIME SETUP (2 minutes)
+-------------------------------------------------------------------------------
+
+  1. Press Ctrl + Alt + E, then click the gear button at the top.
+  2. Weather: "auto" finds you by your internet connection, or type a city.
+  3. Code activity:
+       GitHub  - type your username (a token is optional; it adds your
+                 notification count and avoids GitHub's hourly limit).
+       Gitea   - your server address (e.g. https://git.example.com) and an
+                 access token: in Gitea go to Settings > Applications >
+                 Generate New Token, with read access to user, repository
+                 and notification.
+       "Show"  - github, gitea, or both (merged into one graph).
+  4. Arrange widgets the way you like, then click Done.
+
+Your pinned taskbar apps are copied into the dock on first start.
+
+
+-------------------------------------------------------------------------------
+  GOOD TO KNOW
+-------------------------------------------------------------------------------
+
+  - Everything is saved to:  %USERPROFILE%\.config\unidesk\config.yaml
+    You can edit it by hand (tray icon > Edit config.yaml); changes apply as
+    soon as you save. Every option is explained in the file.
+  - Tokens you enter stay in that file on your PC. They are only sent to
+    GitHub / your Gitea server.
+  - Widgets and the dock hide while a game or video is fullscreen, so they
+    cost nothing while you play.
+  - The GPU tile needs an NVIDIA graphics card.
+  - Unread badges on dock icons come from the Windows taskbar, so they
+    appear for apps that show badges there (Discord, Telegram, ...).
+  - A log for troubleshooting: %LOCALAPPDATA%\unidesk\unidesk.log
+
+
+-------------------------------------------------------------------------------
+  GETTING THE NORMAL TASKBAR BACK
+-------------------------------------------------------------------------------
+
+  - Quit unidesk from its tray icon: the Windows taskbar comes straight back.
+  - Or Settings > Dock > turn off "Hide the Windows taskbar".
+  - If unidesk was force-closed and the taskbar is missing, run
+    "Restore the Windows taskbar" from the Start menu (unidesk folder).
+  - Uninstalling (Settings > Apps) also restores it.

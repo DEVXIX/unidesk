@@ -1,0 +1,8 @@
+PySide6-Essentials>=6.11
+ruamel.yaml>=0.18
+materialyoucolor>=2.0
+psutil>=6.0
+pylnk3>=0.4
+comtypes>=1.4
+truststore>=0.10
+fonttools>=4.50

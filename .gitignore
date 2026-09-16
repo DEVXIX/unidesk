@@ -1,0 +1,9 @@
+﻿tools/fonts-src/
+resources/
+media-bridge/bin/
+media-bridge/obj/
+__pycache__/
+*.pyc
+dist/
+build/
+

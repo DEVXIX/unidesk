@@ -1,0 +1,135 @@
+# unidesk: desktop widgets. Save this file and the desktop updates instantly.
+#
+# Ctrl+Alt+E (or double-click the tray icon) toggles edit mode: drag widgets
+# around and their x / y are written back into this file when you let go.
+# Widgets hide while a fullscreen app (a game, a video) is in front, so they
+# cost nothing while you play.
+
+theme:
+  # Where the Material You colours come from:
+  #   artwork   - the cover of the song playing (falls back to the wallpaper, then color)
+  #   wallpaper - your desktop wallpaper
+  #   color     - the colour below, always
+  source: artwork
+  color: "#b5485d"
+  mode: dark            # dark | light
+  scheme: tonal-spot    # tonal-spot | vibrant | expressive | fidelity | content | neutral
+
+style:
+  font: Google Sans Flex
+  font_roundness: 60    # 0 (sharp) .. 100 (fully rounded letters)
+  radius: 28            # card corner radius
+  card_opacity: 0.92    # 1 = solid cards
+  shadows: true
+  animation_speed: 1.0  # 0.5 = snappier, 2 = slower
+  scale: 1.0            # size of every widget at once
+
+settings:
+  grid: 10              # edit-mode snapping in pixels (0 = off)
+  git:                  # the code activity widget
+    source: github      # github | gitea | both (merged into one graph and feed)
+    profile: github     # whose name and avatar to show: github | gitea
+    github_user: ""     # your GitHub username
+    github_token: ""    # optional: adds your unread notification count
+    gitea_url: ""       # e.g. https://git.example.com
+    gitea_token: ""     # Gitea > Settings > Applications > new token (read: user, repository, notification)
+  weather:
+    location: auto      # auto (from your IP), a city name, or "lat,lon"
+    units: metric       # metric | imperial
+
+# The dock at the bottom: your apps, Start, search, now playing, clock and
+# quick icons. Right-click an app to pin/unpin it.
+dock:
+  enabled: true
+  hide_windows_taskbar: true   # make the real taskbar invisible while unidesk runs (restored on quit)
+  badges: true                 # unread counts on app icons (read from the Windows taskbar)
+  reserve_space: true          # maximised windows stop above the dock
+  icon_size: 40
+  zoom: 1.3                    # hover zoom (1 = off)
+  now_playing: true
+  search: true
+  clock_format: 12h            # 12h | 24h
+  clock_seconds: false
+  # pinned: filled in on first run from your taskbar pins and open apps
+
+# Search (the dock's search box, or the hotkey): apps, maths, settings, web.
+search:
+  enabled: true           # false = the search box opens Windows search instead
+  hotkey: alt+space       # "" to turn off
+  web: "https://www.google.com/search?q={q}"
+
+# Each widget: id (unique), type, x, y (pixels from the top-left of the usable
+# screen area), scale (1 = normal, 1.5 = half again as big), and options for
+# that type. In edit mode, drag a widget's corner handle to change its scale. Delete an entry to remove a widget,
+# copy one to add another.
+widgets:
+- id: time
+  type: time
+  x: 710
+  y: 330
+  options:
+    format: 24h           # 24h | 12h
+    seconds: false
+    date: true            # a small date line under the time
+    size: 150             # time text height in pixels
+
+- id: clock
+  type: clock
+  x: 96
+  y: 12
+  options:
+    size: 240
+    seconds: true
+    quote: "Keep 'er steady!"     # "" hides the pill
+
+- id: music
+  type: media
+  x: 12
+  y: 320
+  options:
+    style: card           # card | poster
+    width: 420
+    lyrics: true
+    lyric_lines: 7
+
+- id: weather
+  type: weather
+  x: 1476
+  y: 12
+
+- id: cpu
+  type: system
+  x: 1476
+  y: 146
+  options: {metric: cpu, tone: primary}          # metric: cpu | ram | disk | gpu | gpu-temp | vram
+
+- id: ram
+  type: system
+  x: 1620
+  y: 146
+  options: {metric: ram, tone: secondary}        # tone: primary | secondary | tertiary
+
+- id: gpu
+  type: system
+  x: 1764
+  y: 146
+  options: {metric: gpu, tone: tertiary}
+- id: profile
+  type: profile
+  x: 1636
+  y: 290
+  options:
+    avatar: github          # github, or a path to an image
+    background: wallpaper   # wallpaper | artwork | a path to an image
+
+- id: calendar
+  type: calendar
+  x: 1464
+  y: 556
+  options: {view: week}       # week | month
+
+- id: github
+  type: github
+  x: 1464
+  y: 684
+  options: {weeks: 24, activity: 2}

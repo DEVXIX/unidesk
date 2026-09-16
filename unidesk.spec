@@ -1,0 +1,39 @@
+# PyInstaller spec: python -m PyInstaller unidesk.spec  (run tools\build.ps1 instead)
+from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+datas = [
+    ("unidesk/qml", "unidesk/qml"),
+    ("unidesk/fonts", "unidesk/fonts"),
+    ("unidesk/defaults", "unidesk/defaults"),
+    ("build/media-bridge", "media-bridge"),
+]
+binaries = []
+hiddenimports = collect_submodules("comtypes.gen") + ["truststore", "pylnk3", "psutil"]
+
+for package in ("materialyoucolor",):
+    d, b, h = collect_all(package)
+    datas += d
+    binaries += b
+    hiddenimports += h
+
+a = Analysis(
+    ["unidesk.pyw"],
+    pathex=["."],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    excludes=["tkinter", "unittest", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore", "PySide6.QtCharts", "PySide6.QtMultimedia"],
+    noarchive=False,
+)
+pyz = PYZ(a.pure)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="unidesk",
+    icon="build/unidesk.ico",
+    console=False,
+    version=None,
+)
+coll = COLLECT(exe, a.binaries, a.datas, name="unidesk")
