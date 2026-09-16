@@ -27,8 +27,18 @@ $setup = Get-Item "dist\unidesk-setup-$version.exe"
 # GitHub token: env var, or the one git's credential manager stores.
 $token = $env:GITHUB_TOKEN
 if (-not $token) {
-    $cred = "protocol=https`nhost=github.com`n`n" | git credential fill 2>$null
-    $token = ($cred | Where-Object { $_ -like "password=*" }) -replace "^password=", ""
+    # PowerShell pipes add a BOM / CRLF that git rejects, so talk to it directly.
+    $psi = New-Object System.Diagnostics.ProcessStartInfo "git", "credential fill"
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.UseShellExecute = $false
+    $git = [System.Diagnostics.Process]::Start($psi)
+    $git.StandardInput.NewLine = "`n"
+    $git.StandardInput.Write("protocol=https`nhost=github.com`n`n")
+    $git.StandardInput.Close()
+    $cred = $git.StandardOutput.ReadToEnd() -split "`n"
+    $git.WaitForExit()
+    $token = (($cred | Where-Object { $_ -like "password=*" }) -replace "^password=", "").Trim()
 }
 if (-not $token) { throw "No GitHub credentials. Set GITHUB_TOKEN or run 'git push' once to sign in." }
 $headers = @{ Authorization = "Bearer $token"; Accept = "application/vnd.github+json"; "User-Agent" = "unidesk-release" }
