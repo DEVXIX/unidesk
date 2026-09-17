@@ -142,8 +142,22 @@ class Displays(QObject):
         return self.slot_at(pos.x(), pos.y())
 
     def set_suspended(self, devices: set[str]):
+        # `devices` are Win32 device names (\\.\DISPLAY1). QScreen.name() reports
+        # the monitor model on this Qt build, so match each covered monitor to a
+        # screen by position instead.
+        from . import desktop
+
+        rects = desktop.monitors()
+        covered_origins = {(rects[d][0], rects[d][1]) for d in devices if d in rects}
         for slot in self.slots:
-            slot.set_suspended(slot.screen.name() in devices)
+            geo = slot.screen.geometry()
+            dpr = slot.screen.devicePixelRatio()
+            origin = (round(geo.x() * dpr), round(geo.y() * dpr))
+            slot.set_suspended(
+                slot.screen.name() in devices
+                or origin in covered_origins
+                or any(abs(origin[0] - ox) <= 2 and abs(origin[1] - oy) <= 2 for ox, oy in covered_origins)
+            )
 
     def desk_windows(self) -> list:
         return [s.desk_window for s in self.slots if s.desk_window is not None]
