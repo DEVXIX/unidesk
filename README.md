@@ -7,6 +7,11 @@ Desktop widgets, a dock and search for Windows 11, in a Material You style. Colo
   - music with synced lyrics
   - weather, CPU / RAM / GPU and a calendar
   - network speed, storage, clipboard history and notifications
+  - a volume mixer, device batteries and CPU temperature
+  - notes and to-dos, a timer / Pomodoro, a launcher grid and a countdown
+  - recently played games and League of Legends rank
+  - pull requests, issues and CI from GitHub + Gitea
+  - a photo slideshow and a quote of the day
   - a profile card
   - GitHub + Gitea activity
   - picture frames

@@ -219,10 +219,15 @@ class ConfigStore(QObject):
             self.changed.emit()
 
 
+# Widget types that were renamed; old config files keep working.
+TYPE_ALIASES = {"disks": "storage"}
+
+
 def _widgets(value) -> list[dict]:
     """Every widget with all its placement keys, whatever the file left out."""
     return [
-        {**w, "screen": _screen(w.get("screen")), "anchor": layout.normalize(w.get("anchor")),
+        {**w, "type": TYPE_ALIASES.get(str(w.get("type")), w.get("type")),
+         "screen": _screen(w.get("screen")), "anchor": layout.normalize(w.get("anchor")),
          "x": _num(w.get("x")), "y": _num(w.get("y")), "scale": _scale(w.get("scale")), "options": w.get("options") or {}}
         for w in (value if isinstance(value, list) else [])
         if isinstance(w, dict) and w.get("id") and w.get("type")

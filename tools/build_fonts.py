@@ -40,6 +40,10 @@ wifi lan wifi_off volume_up expand_less search push_pin open_in_new
 calculate language folder
 content_paste content_copy image notes delete_sweep
 swap_vert arrow_downward arrow_upward usb notifications_off clear_all
+volume_off volume_down headphones keep sticky_note_2 check_box check_box_outline_blank timer replay stop apps
+sports_esports emoji_events trending_up trending_down hourglass_top event photo_library bug_report error
+pending cancel task_alt battery_full battery_charging_full bluetooth mouse headset_mic gamepad keyboard
+chevron_right north_east rocket_launch celebration shuffle edit_note format_list_bulleted coffee
 """.split()
 
 

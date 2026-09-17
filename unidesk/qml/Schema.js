@@ -15,7 +15,18 @@ var types = [
     { type: "network",  label: "Network speed", icon: "swap_vert" },
     { type: "storage",  label: "Storage",       icon: "hard_drive" },
     { type: "clipboard", label: "Clipboard",    icon: "content_paste" },
-    { type: "notifications", label: "Notifications", icon: "notifications" }
+    { type: "notifications", label: "Notifications", icon: "notifications" },
+    { type: "mixer",    label: "Volume mixer",  icon: "headphones" },
+    { type: "notes",    label: "Note / to-do",  icon: "sticky_note_2" },
+    { type: "timer",    label: "Timer / Pomodoro", icon: "timer" },
+    { type: "launcher", label: "Launcher",      icon: "apps" },
+    { type: "games",    label: "Recent games",  icon: "sports_esports" },
+    { type: "league",   label: "League of Legends", icon: "emoji_events" },
+    { type: "countdown", label: "Countdown",    icon: "hourglass_top" },
+    { type: "slideshow", label: "Photo slideshow", icon: "photo_library" },
+    { type: "quote",    label: "Quote of the day", icon: "format_quote" },
+    { type: "dev",      label: "Code reviews & CI", icon: "merge" },
+    { type: "devices",  label: "Batteries",     icon: "battery_full" }
 ];
 
 var tones = ["primary", "secondary", "tertiary", "surface"];
@@ -39,7 +50,7 @@ var fields = {
         { key: "lyric_lines", label: "Lyric lines", kind: "slider", min: 3, max: 13, step: 2, def: 7 }
     ],
     system: [
-        { key: "metric", label: "Shows", kind: "choice", options: ["cpu", "ram", "disk", "gpu", "gpu-temp", "vram"], def: "cpu" },
+        { key: "metric", label: "Shows", kind: "choice", options: ["cpu", "ram", "disk", "gpu", "gpu-temp", "cpu-temp", "vram"], def: "cpu" },
         { key: "tone", label: "Colour", kind: "choice", options: tones, def: "primary" },
         { key: "width", label: "Width", kind: "slider", min: 100, max: 260, step: 5, def: 130 },
         { key: "height", label: "Height", kind: "slider", min: 90, max: 220, step: 5, def: 118 }
@@ -83,6 +94,70 @@ var fields = {
         { key: "items", label: "Rows shown (scroll for more)", kind: "slider", min: 2, max: 10, step: 1, def: 5 },
         { key: "images", label: "Keep copied images", kind: "bool", def: true },
         { key: "width", label: "Width", kind: "slider", min: 260, max: 560, step: 10, def: 340 }
+    ],
+    mixer: [
+        { key: "rows", label: "Apps shown before scrolling", kind: "slider", min: 2, max: 8, step: 1, def: 3 },
+        { key: "width", label: "Width", kind: "slider", min: 280, max: 480, step: 10, def: 360 }
+    ],
+    notes: [
+        { key: "mode", label: "Kind", kind: "choice", options: ["note", "todo"], def: "note" },
+        { key: "title", label: "Title", kind: "text", def: "" },
+        { key: "tone", label: "Colour", kind: "choice", options: ["tertiary", "primary", "secondary", "surface"], def: "tertiary" },
+        { key: "font_size", label: "Text size", kind: "slider", min: 12, max: 24, step: 1, def: 15 },
+        { key: "width", label: "Width", kind: "slider", min: 220, max: 480, step: 10, def: 300 },
+        { key: "height", label: "Height (note)", kind: "slider", min: 140, max: 460, step: 10, def: 220 }
+    ],
+    timer: [
+        { key: "size", label: "Size", kind: "slider", min: 160, max: 340, step: 10, def: 230 },
+        { key: "pomodoro", label: "Pomodoro (focus / break)", kind: "bool", def: true },
+        { key: "focus_minutes", label: "Focus minutes", kind: "slider", min: 5, max: 90, step: 5, def: 25 },
+        { key: "break_minutes", label: "Break minutes", kind: "slider", min: 1, max: 30, step: 1, def: 5 },
+        { key: "pause_music", label: "Pause music when time's up", kind: "bool", def: false },
+        { key: "auto_continue", label: "Start the next session automatically", kind: "bool", def: false }
+    ],
+    launcher: [
+        { key: "items", label: "Shortcuts (one per line: path, URL, or Name | target)", kind: "lines", def: "%USERPROFILE%\\Downloads\nms-settings:\nhttps://github.com\nC:\\Windows\\explorer.exe" },
+        { key: "columns", label: "Columns", kind: "slider", min: 2, max: 8, step: 1, def: 4 },
+        { key: "tile", label: "Tile size", kind: "slider", min: 56, max: 110, step: 2, def: 76 }
+    ],
+    games: [
+        { key: "title", label: "Title", kind: "text", def: "Jump back in" },
+        { key: "count", label: "Games shown", kind: "slider", min: 2, max: 10, step: 1, def: 5 },
+        { key: "cover_width", label: "Cover size", kind: "slider", min: 70, max: 150, step: 2, def: 96 }
+    ],
+    league: [
+        { key: "queue", label: "Queue", kind: "choice", options: ["solo", "flex"], def: "solo" },
+        { key: "preview_tier", label: "Preview rank (see how a tier looks)", kind: "choice", options: ["off", "Iron", "Bronze", "Silver", "Gold", "Platinum", "Emerald", "Diamond", "Master", "Grandmaster", "Challenger"], def: "off" },
+        { key: "preview_lp", label: "Preview LP", kind: "slider", min: 0, max: 3000, step: 1, def: 1287 },
+        { key: "games", label: "Recent games shown", kind: "slider", min: 3, max: 10, step: 1, def: 7 },
+        { key: "width", label: "Width", kind: "slider", min: 340, max: 500, step: 10, def: 390 }
+    ],
+    countdown: [
+        { key: "label", label: "What for", kind: "text", def: "New Year" },
+        { key: "date", label: "Date (YYYY-MM-DD)", kind: "text", def: "" },
+        { key: "shape", label: "Shape", kind: "choice", options: ["burst", "cookie", "star", "flower", "clover", "squircle", "circle"], def: "burst" },
+        { key: "size", label: "Size", kind: "slider", min: 150, max: 340, step: 10, def: 210 }
+    ],
+    slideshow: [
+        { key: "folder", label: "Folder", kind: "text", def: "%USERPROFILE%\\Pictures" },
+        { key: "interval", label: "Seconds per photo", kind: "slider", min: 3, max: 120, step: 1, def: 12 },
+        { key: "shuffle", label: "Shuffle", kind: "bool", def: true },
+        { key: "shape", label: "Shape", kind: "choice", options: ["squircle", "rounded", "cookie", "star", "burst", "clover", "circle"], def: "squircle" },
+        { key: "size", label: "Size", kind: "slider", min: 180, max: 900, step: 10, def: 360 }
+    ],
+    quote: [
+        { key: "quotes", label: "Your quotes (one per line: text \u2014 author). Empty = built-in", kind: "lines", def: "" },
+        { key: "tone", label: "Colour", kind: "choice", options: ["surface", "primary", "secondary", "tertiary"], def: "surface" },
+        { key: "font_size", label: "Text size", kind: "slider", min: 13, max: 30, step: 1, def: 18 },
+        { key: "width", label: "Width", kind: "slider", min: 260, max: 600, step: 10, def: 360 }
+    ],
+    dev: [
+        { key: "rows", label: "Rows", kind: "slider", min: 3, max: 10, step: 1, def: 5 },
+        { key: "ci_repos", label: "CI repos (one per line: github:owner/repo or gitea:owner/repo)", kind: "lines", def: "" },
+        { key: "width", label: "Width", kind: "slider", min: 360, max: 580, step: 10, def: 420 }
+    ],
+    devices: [
+        { key: "width", label: "Width", kind: "slider", min: 260, max: 440, step: 10, def: 320 }
     ],
     notifications: [
         { key: "items", label: "Rows shown (scroll for more)", kind: "slider", min: 1, max: 8, step: 1, def: 4 },

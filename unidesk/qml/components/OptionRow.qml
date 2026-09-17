@@ -158,6 +158,36 @@ Column {
         }
     }
 
+    // multi-line text (applies when you click away)
+    Rectangle {
+        visible: row.field.kind === "lines"
+        width: parent.width
+        height: visible ? Math.min(160, Math.max(72, linesEdit.contentHeight + 20)) : 0
+        radius: 12
+        color: Theme.c.surfaceContainerHighest
+        border.width: linesEdit.activeFocus ? 2 : 1
+        border.color: linesEdit.activeFocus ? Theme.c.primary : Theme.c.outlineVariant
+        Flickable {
+            anchors.fill: parent
+            anchors.margins: 10
+            contentHeight: linesEdit.contentHeight
+            clip: true
+            TextEdit {
+                id: linesEdit
+                width: parent.width
+                text: row.field.kind === "lines" ? String(row.current || "") : ""
+                wrapMode: TextEdit.WrapAnywhere
+                font.family: Theme.font
+                font.pixelSize: 13
+                color: Theme.c.onSurface
+                selectionColor: Theme.c.primary
+                selectedTextColor: Theme.c.onPrimary
+                selectByMouse: true
+                onActiveFocusChanged: if (!activeFocus && text !== String(row.current || "")) row.changed(text)
+            }
+        }
+    }
+
     // text
     TextField {
         id: textBox

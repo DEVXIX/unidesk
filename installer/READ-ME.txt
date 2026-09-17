@@ -6,7 +6,10 @@ Thanks for installing unidesk! It adds three things to your desktop:
 
   - WIDGETS on your wallpaper: time, clock, music with synced lyrics, weather,
     CPU / RAM / GPU, network speed, storage, clipboard history,
-    notifications, calendar, profile card, GitHub/Gitea activity, pictures.
+    notifications, calendar, profile card, GitHub/Gitea activity, pictures,
+    volume mixer, batteries, notes and to-dos, timer / Pomodoro, launcher,
+    recent games, League of Legends, countdown, photo slideshow, quote of
+    the day, and code reviews / CI. Add them from edit mode > "Add widget".
   - A DOCK at the bottom that replaces the Windows taskbar.
   - SEARCH for your apps, settings, maths, files and the web.
 
@@ -105,7 +108,11 @@ Your pinned taskbar apps are copied into the dock on first start.
     colours into their settings (title bar, menus, tabs, status bar,
     scroll bars). Your own values come back when you turn it off. If VS
     Code's Settings Sync is on, it syncs these colours as well.
-  - The GPU tile needs an NVIDIA graphics card.
+  - The GPU tile needs an NVIDIA graphics card. CPU temperature needs
+    LibreHardwareMonitor running with its web server switched on.
+  - League of Legends widget: open the League client once; it keeps showing
+    your last seen rank while the client is closed.
+  - Notes and to-dos are saved in %USERPROFILE%\.config\unidesk\notes.json.
   - Unread badges on dock icons come from the Windows taskbar, so they
     appear for apps that show badges there (Discord, Telegram, ...).
   - A log for troubleshooting: %LOCALAPPDATA%\unidesk\unidesk.log

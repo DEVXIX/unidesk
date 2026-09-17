@@ -34,7 +34,13 @@ from .updater import Updater
 from .providers.clipboard import Clipboard, ClipboardImages
 from .providers.github import GitHub
 from .providers.media import Media
+from .providers.audio import Audio
+from .providers.devdash import DevDash
+from .providers.devices import Devices
+from .providers.games import Games
+from .providers.league import League
 from .providers.network import Network
+from .providers.notes import Notes
 from .providers.notifications import Notifications
 from .providers.storage import Storage
 from .providers.system import System
@@ -66,9 +72,20 @@ NEEDS = {
     "storage": {"storage"},
     "clipboard": {"clipboard"},
     "notifications": {"notifications"},
+    "mixer": {"audio"},
+    "notes": set(),
+    "timer": set(),
+    "launcher": set(),
+    "games": {"games"},
+    "league": {"league"},
+    "countdown": set(),
+    "slideshow": set(),
+    "quote": set(),
+    "dev": {"devdash"},
+    "devices": {"devices"},
 }
 # Polling providers that pause while every screen is covered by a fullscreen app.
-PAUSABLE = ("system", "weather", "github", "network", "storage", "notifications")
+PAUSABLE = ("system", "weather", "github", "network", "storage", "notifications", "audio", "games", "league", "devdash", "devices")
 
 
 class Desk(QObject):
@@ -97,6 +114,7 @@ class Desk(QObject):
         self._wallpaper_url = ""
         self._wallpaper_mtime = 0.0
         self.dock_provider = None
+        self.notify_hook = None  # (title, text) -> tray message, set once the tray exists
 
         store.changed.connect(self._apply_config)
         providers["media"].artChanged.connect(theme.set_art)
@@ -133,6 +151,14 @@ class Desk(QObject):
         for w in widgets:
             if w["type"] == "github":
                 self._providers["github"].weeks = int(w["options"].get("weeks", 24))
+        devdash = self._providers["devdash"]
+        devdash.repos = [str(r).strip() for w in widgets if w["type"] == "dev"
+                         for r in str(w["options"].get("ci_repos", "")).replace(",", "\n").splitlines() if str(r).strip()]
+        devdash.configure({
+            "source": git.get("source") or "github",
+            "github_user": git.get("github_user", ""), "github_token": git.get("github_token", ""),
+            "gitea_url": git.get("gitea_url", ""), "gitea_token": git.get("gitea_token", ""),
+        })
         self._providers["clipboard"].keep_images = any(
             w["type"] == "clipboard" and w["options"].get("images", True) is not False for w in widgets)
 
@@ -317,6 +343,62 @@ class Desk(QObject):
         self.editingChanged.emit()
         tray_refresh()
 
+    @Slot(str, result="QVariantList")
+    def listImages(self, folder: str):
+        """Image files in a folder (for the slideshow), as file URLs."""
+        p = Path(os.path.expandvars(os.path.expanduser(str(folder))))
+        if not p.is_dir():
+            return []
+        exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
+        return [QUrl.fromLocalFile(str(f)).toString() for f in sorted(p.iterdir()) if f.suffix.lower() in exts][:500]
+
+    @Slot(str)
+    def launch(self, target: str):
+        """Open an app (path or AppUserModelId), file, folder, URL or settings page."""
+        target = os.path.expandvars(os.path.expanduser(str(target).strip()))
+        if not target:
+            return
+        if "!" in target and "\\" not in target and "://" not in target:
+            target = f"shell:AppsFolder\\{target}"
+        try:
+            os.startfile(target)
+        except OSError as e:
+            print(f"[unidesk] could not open {target}: {e}")
+
+    @Slot(str, result=str)
+    def iconFor(self, target: str) -> str:
+        """Shell icon for a launcher entry."""
+        from .dock import winapi
+
+        target = os.path.expandvars(os.path.expanduser(str(target).strip()))
+        if "://" in target and not target.startswith("file:"):
+            return ""
+        source = f"shell:AppsFolder\\{target}" if "!" in target and "\\" not in target else target
+        try:
+            winapi.com_init()
+            path = winapi.icon_png(source, 96, Path(os.environ.get("LOCALAPPDATA", ".")) / "unidesk" / "icons")
+        except Exception:
+            path = ""
+        return QUrl.fromLocalFile(path).toString() if path else ""
+
+    @Slot(str, str)
+    def notify(self, title: str, text: str):
+        if self.notify_hook:
+            self.notify_hook(title, text)
+
+    @Slot(QObject, bool)
+    def focusInput(self, window, on: bool):
+        """Let a desk window take the keyboard while one of its text boxes (notes) is in use."""
+        if window is None:
+            return
+        hwnd = int(window.winId())
+        desktop.set_activatable(hwnd, on or self._editing)
+        if on:
+            from .dock import winapi
+
+            winapi.activate(hwnd)
+            window.requestActivate()
+
     @Slot(str, result=str)
     def fileUrl(self, path: str) -> str:
         p = Path(os.path.expandvars(os.path.expanduser(str(path))))
@@ -486,7 +568,9 @@ def main():
     providers = {
         "media": Media(), "system": System(), "weather": Weather(), "github": GitHub(),
         "network": Network(), "storage": Storage(), "clipboard": Clipboard(), "notifications": Notifications(),
+        "audio": Audio(), "games": Games(), "league": League(), "devdash": DevDash(), "devices": Devices(),
     }
+    notes = Notes()
     media = providers["media"]
     displays = Displays(app)
     desk = Desk(app, store, theme, displays, providers)
@@ -515,7 +599,9 @@ def main():
     for name, obj in (("Desk", desk), ("Theme", theme), ("Media", media), ("System", providers["system"]),
                       ("Weather", providers["weather"]), ("GitHub", providers["github"]), ("Network", providers["network"]),
                       ("Storage", providers["storage"]), ("Clipboard", providers["clipboard"]),
-                      ("Notifications", providers["notifications"]), ("Dock", dock), ("Search", search), ("Updater", updater)):
+                      ("Notifications", providers["notifications"]), ("Dock", dock), ("Search", search), ("Updater", updater),
+                      ("Audio", providers["audio"]), ("Games", providers["games"]), ("League", providers["league"]),
+                      ("DevDash", providers["devdash"]), ("Devices", providers["devices"]), ("Notes", notes)):
         ctx.setContextProperty(name, obj)
     if not displays.attach(engine):
         return 1
@@ -641,6 +727,7 @@ def main():
     app.installNativeEventFilter(hotkey)
 
     updater.notify = lambda title, text: tray.showMessage(title, text)
+    desk.notify_hook = lambda title, text: tray.showMessage(title, text)
     if not SNAPSHOT:
         updater.start()
 

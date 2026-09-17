@@ -76,7 +76,9 @@ search:
 #   scale   1 = normal, 1.5 = half again as big (or drag its corner handle in edit mode)
 # Types: time, clock, media, weather, system, calendar, profile, github, picture,
 #   network (download and upload speed), storage (your drives), clipboard (recent copies, kept in
-#   memory only) and notifications (what's in Notification Center).
+#   memory only) and notifications (what's in Notification Center),
+#   mixer, notes, timer, launcher, games, league, countdown, slideshow, quote,
+#   dev (pull requests, issues, CI) and devices (batteries).
 # Delete an entry to remove a widget, copy one to add another.
 widgets:
 - id: time

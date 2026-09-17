@@ -35,8 +35,9 @@ class System(QObject):
         self._stats: dict = {
             "cpu": 0.0, "ram": 0.0, "ramUsedGb": 0.0, "ramTotalGb": 0.0, "disk": 0.0, "diskFreeGb": 0.0,
             "gpu": None, "uptime": 0, "user": getpass.getuser(), "host": platform.node(),
-            "cpuName": _cpu_name(), "down": 0.0, "up": 0.0,
+            "cpuName": _cpu_name(), "down": 0.0, "up": 0.0, "cpuTemp": None,
         }
+        self._tick = 0
         self._timer = QTimer(self, interval=2000, timeout=self._sample)
         self._gpu_ok = shutil.which("nvidia-smi") is not None
         self._gpu_busy = False
@@ -71,10 +72,40 @@ class System(QObject):
             s["down"] = max(0.0, (io.bytes_recv - self._net[0]) / dt)
             s["up"] = max(0.0, (io.bytes_sent - self._net[1]) / dt)
         self._net = (io.bytes_recv, io.bytes_sent, now)
+        self._tick += 1
+        if self._tick % 5 == 1:
+            threading.Thread(target=self._query_cpu_temp, daemon=True).start()
         if self._gpu_ok and not self._gpu_busy:
             self._gpu_busy = True
             threading.Thread(target=self._query_gpu, daemon=True).start()
         self.statsChanged.emit()
+
+    def _query_cpu_temp(self):
+        """CPU temperature needs a sensor reader: LibreHardwareMonitor's web server (port 8085), if it runs."""
+        import json
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:8085/data.json", timeout=1.5) as res:
+                tree = json.loads(res.read().decode("utf-8"))
+        except Exception:
+            self._stats["cpuTemp"] = None
+            return
+        found = []
+
+        def walk(node, in_cpu=False):
+            text = str(node.get("Text", "")).lower()
+            in_cpu = in_cpu or str(node.get("ImageURL", "")).endswith("cpu.png") or "cpu" in text
+            if in_cpu and node.get("Type") == "Temperature" and ("package" in text or "tctl" in text):
+                try:
+                    found.append(float(str(node.get("Value", "")).split()[0].replace(",", ".")))
+                except ValueError:
+                    pass
+            for child in node.get("Children", []):
+                walk(child, in_cpu)
+
+        walk(tree)
+        self._stats["cpuTemp"] = found[0] if found else None
 
     def _query_gpu(self):
         try:

@@ -6,3 +6,4 @@ pylnk3>=0.4
 comtypes>=1.4
 truststore>=0.10
 fonttools>=4.50
+pycaw>=20240316

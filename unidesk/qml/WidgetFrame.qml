@@ -17,6 +17,9 @@ Item {
         time: "Time", clock: "Clock", media: "Media", system: "System", weather: "Weather",
         calendar: "Calendar", profile: "Profile", github: "GitHub", picture: "Picture",
         network: "Network", storage: "Storage", clipboard: "Clipboard", notifications: "Notifications"
+    ,
+        mixer: "Mixer", notes: "Notes", timer: "Timer", launcher: "Launcher", games: "Games", league: "League",
+        countdown: "Countdown", slideshow: "Slideshow", quote: "Quote", dev: "Dev", devices: "Devices"
     })
 
     property bool dragging: false
@@ -81,7 +84,10 @@ Item {
         Loader {
             id: loader
             source: frame.types[frame.spec.type] ? "widgets/" + frame.types[frame.spec.type] + "Widget.qml" : ""
-            onLoaded: item.options = Qt.binding(() => frame.spec.options || {})
+            onLoaded: {
+                item.options = Qt.binding(() => frame.spec.options || {});
+                if (item.hasOwnProperty("widgetId")) item.widgetId = Qt.binding(() => frame.widgetId);
+            }
         }
 
         Card {

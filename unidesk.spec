@@ -8,7 +8,7 @@ datas = [
     ("build/media-bridge", "media-bridge"),
 ]
 binaries = []
-hiddenimports = collect_submodules("comtypes.gen") + ["truststore", "pylnk3", "psutil"]
+hiddenimports = collect_submodules("comtypes.gen") + collect_submodules("pycaw") + ["truststore", "pylnk3", "psutil"]
 
 for package in ("materialyoucolor",):
     d, b, h = collect_all(package)
