@@ -1,7 +1,7 @@
 """unidesk: YASB-style desktop widgets in Qt Quick.
 
-One transparent window over the screen, clipped to the widgets and pinned
-to the desktop layer.
+Every monitor gets one transparent window over its usable area, clipped to
+its widgets and pinned to the desktop layer, and a dock.
 Everything visual lives in qml/; this file wires config, theme and data
 providers together and owns the tray, edit mode and idle-while-gaming."""
 from __future__ import annotations
@@ -10,24 +10,33 @@ import ctypes
 import os
 import subprocess
 import sys
+import time
 import winreg
 from ctypes import wintypes
 from pathlib import Path
 
-from PySide6.QtCore import QAbstractNativeEventFilter, Property, QObject, QRect, Qt, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QAction, QColor, QFontDatabase, QIcon, QPainter, QPixmap, QRegion
+import psutil
+from PySide6.QtCore import QAbstractNativeEventFilter, Property, QObject, QPoint, QRect, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtGui import QAction, QColor, QFontDatabase, QIcon, QImage, QPainter, QPixmap, QRegion
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import desktop, sharing
+from . import desktop, layout, sharing
+from .appthemes import AppThemes
 from .config import CONFIG_DIR, CONFIG_FILE, ConfigStore
+from .displays import Displays
 from .dock.provider import Dock
+from .frames import WindowFrames
 from .search import Search
 from .updater import Updater
+from .providers.clipboard import Clipboard, ClipboardImages
 from .providers.github import GitHub
 from .providers.media import Media
+from .providers.network import Network
+from .providers.notifications import Notifications
+from .providers.storage import Storage
 from .providers.system import System
 from .providers.weather import Weather
 from .theme import Theme
@@ -38,6 +47,9 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 # UNIDESK_SNAPSHOT=out.png: render off-screen, save a composite picture, quit.
 SNAPSHOT = os.environ.get("UNIDESK_SNAPSHOT", "")
 INSTANCE = "unidesk-snapshot" if SNAPSHOT else "unidesk-single-instance"
+# A fullscreen app must stay in front this long before a screen goes idle, so
+# passing windows (Alt+Tab, a screenshot overlay) never make widgets blink.
+FULLSCREEN_DELAY = 1.2
 
 # Which providers each widget type reads.
 NEEDS = {
@@ -50,7 +62,13 @@ NEEDS = {
     "clock": set(),
     "time": set(),
     "calendar": set(),
+    "network": {"network"},
+    "storage": {"storage"},
+    "clipboard": {"clipboard"},
+    "notifications": {"notifications"},
 }
+# Polling providers that pause while every screen is covered by a fullscreen app.
+PAUSABLE = ("system", "weather", "github", "network", "storage", "notifications")
 
 
 class Desk(QObject):
@@ -61,34 +79,39 @@ class Desk(QObject):
     suspendedChanged = Signal()
     wallpaperChanged = Signal()
     errorChanged = Signal()
-    areaChanged = Signal()
+    selectedChanged = Signal()
+    screensChanged = Signal()
 
-    def __init__(self, app: QApplication, store: ConfigStore, theme: Theme, media: Media, system: System, weather: Weather, github: GitHub):
+    def __init__(self, app: QApplication, store: ConfigStore, theme: Theme, displays: Displays, providers: dict[str, QObject]):
         super().__init__()
         self._app = app
         self._store = store
         self._theme = theme
-        self._media, self._system, self._weather, self._github = media, system, weather, github
+        self._displays = displays
+        self._providers = providers
         self._editing = False
         self._suspended = False
-        self._window: QQuickWindow | None = None
+        self._selected = ""
+        self._needed: set[str] = set()
+        self._fullscreen_since: dict[str, float] = {}
         self._wallpaper_url = ""
         self._wallpaper_mtime = 0.0
+        self.dock_provider = None
 
         store.changed.connect(self._apply_config)
-        media.artChanged.connect(theme.set_art)
+        providers["media"].artChanged.connect(theme.set_art)
+        displays.screensChanged.connect(self._on_screens)
         self._apply_config(initial=True)
 
         self._wall_timer = QTimer(self, interval=5000, timeout=self._check_wallpaper)
         self._wall_timer.start()
         self._check_wallpaper()
 
-        self._fullscreen_timer = QTimer(self, interval=1500, timeout=self._check_fullscreen)
+        self._recheck = QTimer(self, singleShot=True, interval=120, timeout=self._check_fullscreen)
+        self._fullscreen_timer = QTimer(self, interval=1000, timeout=self._check_fullscreen)
         self._fullscreen_timer.start()
-
-        screen = app.primaryScreen()
-        screen.availableGeometryChanged.connect(lambda _: self.areaChanged.emit())
-        screen.geometryChanged.connect(lambda _: self.areaChanged.emit())
+        # Also look again the moment focus moves, so widgets come back straight away.
+        self._window_events = None if SNAPSHOT else desktop.WindowEvents(lambda: self._recheck.start(120))
 
     # ---- config ----------------------------------------------------------------
 
@@ -96,9 +119,9 @@ class Desk(QObject):
         cfg = self._store.config
         self._theme.configure(cfg.get("theme", {}), cfg.get("style", {}))
         settings = cfg.get("settings", {})
-        self._weather.configure(settings.get("weather", {}))
+        self._providers["weather"].configure(settings.get("weather", {}))
         git = settings.get("git") if isinstance(settings.get("git"), dict) else {}
-        self._github.configure({
+        self._providers["github"].configure({
             "source": git.get("source") or "github",
             "profile": git.get("profile") or "github",
             "github_user": git.get("github_user", settings.get("github_user", "")),
@@ -106,33 +129,44 @@ class Desk(QObject):
             "gitea_url": git.get("gitea_url", ""),
             "gitea_token": git.get("gitea_token", ""),
         })
-        for w in cfg["widgets"]:
+        widgets = cfg["widgets"]
+        for w in widgets:
             if w["type"] == "github":
-                self._github.weeks = int(w["options"].get("weeks", 24))
+                self._providers["github"].weeks = int(w["options"].get("weeks", 24))
+        self._providers["clipboard"].keep_images = any(
+            w["type"] == "clipboard" and w["options"].get("images", True) is not False for w in widgets)
 
         needed = set()
-        for w in cfg["widgets"]:
+        for w in widgets:
             needs = set(NEEDS.get(w["type"], set()))
             if w["type"] == "profile" and str(w["options"].get("avatar", "github")) != "github":
                 needs.discard("github")
             if w["type"] == "media" and w["options"].get("lyrics", True):
-                self._media.want_lyrics = True
+                self._providers["media"].want_lyrics = True
             needed |= needs
-        for name, provider in (("media", self._media), ("system", self._system), ("weather", self._weather), ("github", self._github)):
-            if name in needed and not self._suspended:
-                provider.start()
-            elif name not in needed and name != "media":
-                provider.stop()
         self._needed = needed
+        self._run_providers()
         if not initial:
             self.widgetsChanged.emit()
             self.errorChanged.emit()
+
+    def _run_providers(self):
+        for name, provider in self._providers.items():
+            if name in self._needed and not (self._suspended and name in PAUSABLE):
+                provider.start()
+            elif name != "media" and (name not in self._needed or name in PAUSABLE):
+                provider.stop()
+
+    def _on_screens(self):
+        self.screensChanged.emit()
+        self.widgetsChanged.emit()  # widgets of an unplugged screen move to the main one
 
     # ---- QML: data -------------------------------------------------------------
 
     @Property("QVariantList", notify=widgetsChanged)
     def widgets(self):
-        return self._store.config["widgets"]
+        """The config's widgets, each with `display`: the screen it shows on right now."""
+        return [{**w, "display": self._displays.slot_number(w.get("screen", 1))} for w in self._store.config["widgets"]]
 
     @Property("QVariantMap", notify=widgetsChanged)
     def config(self):
@@ -153,23 +187,13 @@ class Desk(QObject):
     def error(self):
         return self._store.error or ""
 
-    @Property(QRect, notify=areaChanged)
-    def area(self):
-        area = self._app.primaryScreen().availableGeometry()
-        if SNAPSHOT:
-            area.translate(-20000, 0)  # render far off-screen; see snapshot()
-        return area
-
-    @Property(QRect, notify=areaChanged)
-    def screenRect(self):
-        rect = self._app.primaryScreen().geometry()
-        if SNAPSHOT:
-            rect.translate(-20000, 0)
-        return rect
-
     @Property("QVariantMap", notify=widgetsChanged)
     def dock(self):
         return self._store.config.get("dock") or {}
+
+    @Property(int, notify=screensChanged)
+    def screenCount(self):
+        return len(self._displays.slots)
 
     @Property(bool, notify=editingChanged)
     def editing(self):
@@ -177,37 +201,79 @@ class Desk(QObject):
 
     @Property(bool, notify=suspendedChanged)
     def suspended(self):
+        """Every screen is covered by a fullscreen app."""
         return self._suspended
 
     @Property(str, notify=wallpaperChanged)
     def wallpaper(self):
         return self._wallpaper_url
 
+    @Property(str, notify=selectedChanged)
+    def selected(self):
+        """The widget whose options are open (one across all screens)."""
+        return self._selected
+
     # ---- QML: actions ----------------------------------------------------------
 
     @Slot(QObject)
     def registerWindow(self, window):
-        first = self._window is None
-        self._window = window
+        """A desk window was created or shown again: pin it to the desktop layer."""
         hwnd = int(window.winId())
-        if first:
-            desktop.pin_to_desktop(hwnd)
-        if self._editing:
-            desktop.bring_to_front(hwnd)
-        else:
-            desktop.send_to_back(hwnd)
+        desktop.pin_to_desktop(hwnd)
+        desktop.set_activatable(hwnd, self._editing)
+        desktop.bring_to_front(hwnd) if self._editing else desktop.send_to_back(hwnd)
 
     @Slot(QObject, "QVariantList")
     def setMask(self, window, rects):
-        """Clip the desk window to the widgets: drawing and clicks outside fall through to the desktop."""
+        """Clip a window to what it shows: drawing and clicks outside fall through to what's below."""
         region = QRegion()
         for x, y, w, h in rects:
             region = region.united(QRegion(int(x), int(y), max(1, int(w)), max(1, int(h))))
         window.setMask(region)
 
-    @Slot(str, int, int, float)
-    def placeWidget(self, widget_id: str, x: int, y: int, scale: float):
-        self._store.place_widget(widget_id, x, y, scale)
+    @Slot("QVariantMap", result="QVariantMap")
+    def placeWidget(self, drop):
+        """Save where a widget was dropped or resized.
+
+        drop: id, display (the screen it shows on), screen (the one its config
+        names; they differ while that screen is unplugged), left / top (in the
+        display's area), width / height, scale; optionally anchor (else the
+        nearest one), and cursorX / cursorY / grabX / grabY (global cursor, and
+        where the widget was grabbed) to move it to the screen the cursor was
+        released on.
+        Returns what was saved: screen, display, anchor, x, y, scale."""
+        slots = self._displays.slots
+        number = self._displays.slot_number(int(drop.get("display") or 1))
+        slot = slots[number - 1] if slots else None
+        left, top = float(drop.get("left", 0)), float(drop.get("top", 0))
+        width, height = float(drop.get("width", 0)), float(drop.get("height", 0))
+        moved = False
+        if slot is not None and "cursorX" in drop:
+            target = self._displays.slot_at(drop["cursorX"], drop["cursorY"])
+            if target is not None and target is not slot:
+                area = target.area
+                left = float(drop["cursorX"]) - area.x() - float(drop.get("grabX", 0))
+                top = float(drop["cursorY"]) - area.y() - float(drop.get("grabY", 0))
+                slot, number, moved = target, target.number, True
+        area_w = slot.area.width() if slot is not None else width
+        area_h = slot.area.height() if slot is not None else height
+        left = max(0.0, min(area_w - width, left))
+        top = max(0.0, min(area_h - height, top))
+        anchor = layout.normalize(drop["anchor"]) if drop.get("anchor") else layout.nearest(left, top, width, height, area_w, area_h)
+        x, y = layout.offsets(anchor, left, top, width, height, area_w, area_h)
+        scale = round(float(drop.get("scale") or 1), 2)
+        # A widget standing in on the main display for an unplugged screen goes
+        # back there when it returns, unless it was dragged onto another screen.
+        configured = int(drop.get("screen") or number)
+        screen = number if moved or self._displays.slot_number(configured) == configured else configured
+        self._store.place_widget(str(drop.get("id", "")), x, y, scale, screen=screen, anchor=anchor)
+        return {"screen": screen, "display": number, "anchor": anchor, "x": x, "y": y, "scale": scale}
+
+    @Slot(float, float, result=int)
+    def screenAt(self, x: float, y: float) -> int:
+        """Screen number under a global point, 0 if none."""
+        slot = self._displays.slot_at(x, y)
+        return slot.number if slot is not None else 0
 
     @Slot(str, str, "QVariant")
     def setOption(self, widget_id: str, key: str, value):
@@ -215,21 +281,36 @@ class Desk(QObject):
             value = int(value)
         self._store.set_option(widget_id, key, value)
 
-    @Slot(str, int, int, result=str)
-    def addWidget(self, widget_type: str, x: int, y: int) -> str:
-        return self._store.add_widget(widget_type, x, y)
+    @Slot(str, int, result=str)
+    def addWidget(self, widget_type: str, screen: int) -> str:
+        """New widgets start in the middle of the screen they were added on."""
+        return self._store.add_widget(widget_type, 0, 0, screen=screen, anchor="center")
 
     @Slot(str)
     def removeWidget(self, widget_id: str):
+        if widget_id == self._selected:
+            self.select("")
         self._store.remove_widget(widget_id)
+
+    @Slot(str)
+    def select(self, widget_id: str):
+        if widget_id != self._selected:
+            self._selected = widget_id
+            self.selectedChanged.emit()
 
     @Slot(bool)
     def setEditing(self, on: bool):
         if on == self._editing:
             return
         self._editing = on
-        if self._window is not None:
-            hwnd = int(self._window.winId())
+        if on:
+            # Nothing stays hidden while arranging.
+            self._fullscreen_since.clear()
+            self._set_fullscreen(set())
+        else:
+            self.select("")
+        for window in self._displays.desk_windows():
+            hwnd = int(window.winId())
             # Editing needs the keyboard (text options), so allow focus then.
             desktop.set_activatable(hwnd, on)
             desktop.bring_to_front(hwnd) if on else desktop.send_to_back(hwnd)
@@ -275,21 +356,39 @@ class Desk(QObject):
         self.wallpaperChanged.emit()
 
     def _check_fullscreen(self):
-        """Hide everything (so nothing renders or polls) while a game or video is fullscreen."""
+        """Idle each screen (hide its widgets and dock, pause polling) while a game
+        or video is fullscreen on it; and keep the desk windows on the desktop layer."""
         if self._editing or SNAPSHOT:
             return
-        busy = desktop.fullscreen_app_active(os.getpid())
-        if busy == self._suspended:
+        for window in self._displays.desk_windows():
+            if window.isVisible():
+                hwnd = int(window.winId())
+                if not desktop.pinned(hwnd):
+                    desktop.pin_to_desktop(hwnd)
+                    desktop.send_to_back(hwnd)
+        try:
+            covered = desktop.fullscreen_monitors(os.getpid())
+        except Exception as e:  # never let a failed look hide the desk
+            print(f"[unidesk] fullscreen check failed: {e}")
+            covered = set()
+        now = time.monotonic()
+        self._fullscreen_since = {name: self._fullscreen_since.get(name, now) for name in covered}
+        confirmed = {name for name, since in self._fullscreen_since.items() if now - since >= FULLSCREEN_DELAY}
+        waiting = [since + FULLSCREEN_DELAY - now for name, since in self._fullscreen_since.items() if name not in confirmed]
+        if waiting:
+            self._recheck.start(max(50, int(min(waiting) * 1000) + 30))
+        self._set_fullscreen(confirmed)
+
+    def _set_fullscreen(self, devices: set[str]):
+        self._displays.set_suspended(devices)
+        slots = self._displays.slots
+        idle = bool(slots) and all(slot.suspended for slot in slots)
+        if idle == self._suspended:
             return
-        self._suspended = busy
-        if getattr(self, "dock_provider", None) is not None:
-            self.dock_provider.suspended = busy
-        self._fullscreen_timer.setInterval(3000 if busy else 1500)
-        for name, provider in (("system", self._system), ("weather", self._weather), ("github", self._github)):
-            if busy:
-                provider.stop()
-            elif name in self._needed:
-                provider.start()
+        self._suspended = idle
+        if self.dock_provider is not None:
+            self.dock_provider.suspended = idle
+        self._run_providers()
         self.suspendedChanged.emit()
 
 
@@ -352,11 +451,24 @@ def main():
     app.setApplicationName("unidesk")
 
     # One copy at a time; a second launch just toggles edit mode in the first.
+    # `--quit` instead closes the running copy properly (taskbar, reserved
+    # space and other windows' frames put back) and waits for it to finish.
     probe = QLocalSocket()
     probe.connectToServer(INSTANCE)
     if probe.waitForConnected(300):
+        if "--quit" in sys.argv:
+            probe.write(b"quit")
+            probe.waitForBytesWritten(1000)
+            if probe.waitForReadyRead(3000):  # it answers with its process id
+                try:
+                    psutil.Process(int(bytes(probe.readAll()).strip() or 0)).wait(timeout=15)
+                except (ValueError, psutil.Error):
+                    pass
+            return 0
         probe.write(b"edit")
         probe.waitForBytesWritten(300)
+        return 0
+    if "--quit" in sys.argv:
         return 0
     QLocalServer.removeServer(INSTANCE)
     server = QLocalServer()
@@ -371,30 +483,56 @@ def main():
 
     store = ConfigStore()
     theme = Theme(family, icon_family)
-    media, system, weather, github = Media(), System(), Weather(), GitHub()
-    desk = Desk(app, store, theme, media, system, weather, github)
+    providers = {
+        "media": Media(), "system": System(), "weather": Weather(), "github": GitHub(),
+        "network": Network(), "storage": Storage(), "clipboard": Clipboard(), "notifications": Notifications(),
+    }
+    media = providers["media"]
+    displays = Displays(app)
+    desk = Desk(app, store, theme, displays, providers)
+    frames = WindowFrames(store, theme)
+    app_themes = AppThemes(store, theme)
 
     dock = Dock(store)
     desk.dock_provider = dock
-    dock_on = bool((store.config.get("dock") or {}).get("enabled", True))
-    if dock_on:
-        media.start()
-        dock.start(passive=bool(SNAPSHOT))
+    dock_settings = lambda: store.config.get("dock") or {}
+
+    def start_dock():
+        if dock_settings().get("enabled", True) is not False and not dock.running:
+            media.start()
+            dock.start(passive=bool(SNAPSHOT))
+
+    start_dock()
+    displays.want_dock = lambda slot: dock_settings().get("enabled", True) is not False and (
+        slot.number == 1 or dock_settings().get("all_screens", True) is not False)
+    displays.before_close = dock.forget_window
 
     engine = QQmlApplicationEngine()
+    engine.addImageProvider("clipboard", ClipboardImages(providers["clipboard"]))
     ctx = engine.rootContext()
     search = Search(store)
     updater = Updater()
-    for name, obj in (("Desk", desk), ("Theme", theme), ("Media", media), ("System", system), ("Weather", weather), ("GitHub", github), ("Dock", dock), ("Search", search), ("Updater", updater)):
+    for name, obj in (("Desk", desk), ("Theme", theme), ("Media", media), ("System", providers["system"]),
+                      ("Weather", providers["weather"]), ("GitHub", providers["github"]), ("Network", providers["network"]),
+                      ("Storage", providers["storage"]), ("Clipboard", providers["clipboard"]),
+                      ("Notifications", providers["notifications"]), ("Dock", dock), ("Search", search), ("Updater", updater)):
         ctx.setContextProperty(name, obj)
-    engine.load(QUrl.fromLocalFile(str(HERE / "qml" / "Main.qml")))
-    if not engine.rootObjects():
+    if not displays.attach(engine):
         return 1
-    if dock_on:
-        engine.load(QUrl.fromLocalFile(str(HERE / "qml" / "DockBar.qml")))
-        desk._dock_window = engine.rootObjects()[-1]
-    # Put the real taskbar back however we exit.
+
+    def on_config():
+        start_dock()
+        displays.sync_windows()  # dock turned on or off, or on every screen or just the main one
+
+    store.changed.connect(on_config)
+    # Search opens on the dock of the screen you're looking at.
+    search.screen_at_cursor = lambda: next((s.number for s in [displays.slot_at_cursor()] if s is not None and s.dock_window is not None), 1)
+    # Put the real taskbar and other apps' window frames back however we exit.
     app.aboutToQuit.connect(dock.stop)
+    app.aboutToQuit.connect(frames.restore)
+    if not SNAPSHOT:
+        frames.configure()
+        app_themes.configure()
 
     # tray
     tray = QSystemTrayIcon(_tray_icon(theme.c.get("primary", "#ffb1c1")))
@@ -482,14 +620,23 @@ def main():
 
     def on_connection():
         sock = server.nextPendingConnection()
-        sock.readyRead.connect(lambda: desk.setEditing(not desk.editing))
+
+        def read():
+            if bytes(sock.readAll()).strip() == b"quit":
+                sock.write(str(os.getpid()).encode())  # `--quit` waits for this process to end
+                sock.flush()
+                QTimer.singleShot(0, app.quit)
+            else:
+                desk.setEditing(not desk.editing)
+
+        sock.readyRead.connect(read)
 
     server.newConnection.connect(on_connection)
 
     hotkey = GlobalHotkey()
     hotkey.add("ctrl+alt+e", lambda: desk.setEditing(not desk.editing))
     search_cfg = store.config.get("search") or {}
-    if dock_on and search_cfg.get("enabled", True) and search_cfg.get("hotkey"):
+    if dock_settings().get("enabled", True) is not False and search_cfg.get("enabled", True) and search_cfg.get("hotkey"):
         hotkey.add(str(search_cfg["hotkey"]), search.toggle)
     app.installNativeEventFilter(hotkey)
 
@@ -501,40 +648,45 @@ def main():
         tray.hide()
         if os.environ.get("UNIDESK_SNAPSHOT_EDIT"):
             QTimer.singleShot(2000, lambda: desk.setEditing(True))
+            # UNIDESK_SNAPSHOT_SELECT=<widget id>: with its options open
+            QTimer.singleShot(2500, lambda: desk.select(os.environ.get("UNIDESK_SNAPSHOT_SELECT", "")))
         delay = int(os.environ.get("UNIDESK_SNAPSHOT_DELAY", "9000"))
-        QTimer.singleShot(delay, lambda: (snapshot(app, desk, SNAPSHOT), app.quit()))
+        QTimer.singleShot(delay, lambda: (snapshot(displays, SNAPSHOT), app.quit()))
 
     code = app.exec()
     media.stop()
-    return code
+    # Everything that matters was put back on aboutToQuit (taskbars, reserved space,
+    # other windows' frames). Leave now: tearing down windows, QML and providers in
+    # Python's order only fills the log with errors, or crashes if forced.
+    tray.hide()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 
-def snapshot(app: QApplication, desk: Desk, out: str):
-    """Paint every widget window onto the wallpaper at its real position."""
-    from PySide6.QtGui import QImage
-
-    area = app.primaryScreen().availableGeometry()
-    canvas = QImage(area.width(), area.height(), QImage.Format.Format_ARGB32_Premultiplied)
+def snapshot(displays: Displays, out: str):
+    """Paint every screen's wallpaper, desk and dock at their real positions."""
+    slots = displays.slots
+    bounds = QRect()
+    for slot in slots:
+        bounds = bounds.united(slot.rect)
+    canvas = QImage(bounds.width(), bounds.height(), QImage.Format.Format_ARGB32_Premultiplied)
     canvas.fill(QColor("#101014"))
     painter = QPainter(canvas)
     wall = QImage(str(WALLPAPER))
-    if not wall.isNull():
-        painter.drawImage(canvas.rect(), wall.scaled(canvas.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-    if desk._window is not None:
-        painter.drawImage(0, 0, desk._window.grabWindow())
-    dock_window = getattr(desk, "_dock_window", None)
-    if dock_window is not None:
-        painter.end()
-        full = app.primaryScreen().geometry()
-        framed = QImage(full.width(), full.height(), QImage.Format.Format_ARGB32_Premultiplied)
-        framed.fill(QColor("#101014"))
-        painter = QPainter(framed)
-        painter.drawImage(area.x() - full.x(), area.y() - full.y(), canvas)
-        painter.drawImage(0, dock_window.y() - (full.y()), dock_window.grabWindow())
-        canvas = framed
+    for slot in slots:
+        rect, origin = slot.rect, bounds.topLeft()
+        if not wall.isNull():
+            scaled = wall.scaled(rect.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+            crop = QRect((scaled.width() - rect.width()) // 2, (scaled.height() - rect.height()) // 2, rect.width(), rect.height())
+            painter.drawImage(rect.topLeft() - origin, scaled, crop)
+        if slot.desk_window is not None:
+            painter.drawImage(slot.area.topLeft() - origin, slot.desk_window.grabWindow())
+        if slot.dock_window is not None:
+            painter.drawImage(QPoint(slot.dock_window.x(), slot.dock_window.y()) - origin, slot.dock_window.grabWindow())
     painter.end()
     canvas.save(out)
-    print(f"[unidesk] snapshot: {len(desk._store.config['widgets'])} widgets -> {out}")
+    print(f"[unidesk] snapshot: {len(slots)} screens -> {out}")
 
 
 # ---- Ctrl+Alt+E ------------------------------------------------------------------

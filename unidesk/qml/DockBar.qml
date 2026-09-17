@@ -6,10 +6,12 @@ import "Icons.js" as Icons
 
 // The dock: a floating pill at the bottom centre with now playing, Start,
 // search, your apps (soft zoom on hover), the tray button, quick icons and the
-// clock. The window spans the bottom of the screen but is clipped to the pill
-// and whatever popup is open, so everything else stays clickable.
+// clock. One per screen. The window spans the bottom of its screen but is
+// clipped to the pill and whatever popup is open, so everything else stays
+// clickable.
 Window {
     id: dockWin
+    required property QtObject slot
     // No Qt.WindowDoesNotAcceptFocus: the dock is made non-activating natively,
     // and allowed to take the keyboard only while search is open.
     flags: Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint | Qt.NoDropShadowWindowHint
@@ -20,21 +22,49 @@ Window {
     readonly property real zoom: cfg.zoom === undefined ? 1.3 : cfg.zoom
     readonly property real pillHeight: iconSize + 16
     readonly property real bottomGap: 8
+    readonly property bool searchHere: Search.open && Search.screen === slot.number
 
-    x: Desk.screenRect.x
-    width: Desk.screenRect.width
+    screen: {
+        var all = Qt.application.screens;
+        for (var i = 0; i < all.length; i++) if (all[i].name === slot.name) return all[i];
+        return all[0];
+    }
+    x: slot.rect.x
+    width: slot.rect.width
     height: 700
-    y: Desk.screenRect.y + Desk.screenRect.height - height
-    visible: !Desk.suspended && cfg.enabled !== false
-    onPillHeightChanged: Dock.reserve(pillHeight + bottomGap * 2)
+    y: slot.rect.y + slot.rect.height - height
+    // Shown once it is set up (on top, not taking focus, clipped). Hidden while
+    // a fullscreen app covers its screen, unless search was opened here.
+    property bool ready: false
+    visible: ready && cfg.enabled !== false && (!slot.suspended || searchHere)
+    onPillHeightChanged: Dock.reserve(dockWin, pillHeight + bottomGap * 2)
+
+    // Every app, or with "apps: screen" only those with a window on this screen (pins always stay).
+    readonly property string monitor: cfg.apps === "screen" ? slot.name : ""
+    readonly property var apps: {
+        var list = Dock.apps;
+        if (!monitor) return list;
+        var out = [];
+        for (var i = 0; i < list.length; i++) {
+            var app = list[i], wins = [], active = false;
+            for (var j = 0; j < app.windows.length; j++) {
+                if (app.windows[j].monitor !== monitor) continue;
+                wins.push(app.windows[j]);
+                active = active || app.windows[j].active;
+            }
+            if (!app.pinned && wins.length === 0) continue;
+            out.push(Object.assign({}, app, { windows: wins, running: wins.length > 0, active: active }));
+        }
+        return out;
+    }
 
     // drag-to-reorder state (pinned apps only)
     property int dragIndex: -1
     property int dragTarget: -1
     property real dragOffset: 0
-    readonly property real slot: iconSize + 14
+    readonly property real slotWidth: iconSize + 14
     readonly property int pinnedCount: {
-        var n = 0, list = Dock.apps;
+        var n = 0, list = dockWin.apps;
         for (var i = 0; i < list.length; i++) if (list[i].pinned) n++;
         return n;
     }
@@ -44,7 +74,7 @@ Window {
     property string pickerKey: ""
     property real pickerX: 0
     readonly property var pickerApp: {
-        var list = Dock.apps;
+        var list = dockWin.apps;
         for (var i = 0; i < list.length; i++) if (list[i].key === pickerKey) return list[i];
         return null;
     }
@@ -72,10 +102,12 @@ Window {
     }
     Timer { id: maskTimer; interval: 16; onTriggered: dockWin.updateMask() }
     onHoveredChanged: maskTimer.restart()
-    onVisibleChanged: if (visible) { Dock.registerWindow(dockWin); Dock.reserve(pillHeight + bottomGap * 2); maskTimer.restart(); }
+    onVisibleChanged: if (visible) { Dock.registerWindow(dockWin); Dock.reserve(dockWin, pillHeight + bottomGap * 2); maskTimer.restart(); }
     Component.onCompleted: {
-        if (visible) { Dock.registerWindow(dockWin); Dock.reserve(pillHeight + bottomGap * 2); }
-        maskTimer.restart();
+        Dock.registerWindow(dockWin);
+        if (cfg.enabled !== false) Dock.reserve(dockWin, pillHeight + bottomGap * 2);
+        updateMask();
+        ready = true;
     }
 
     // Close popups when the pointer has left them for a moment.
@@ -204,7 +236,7 @@ Window {
                     Rectangle { anchors.fill: parent; radius: parent.radius; color: Theme.c.onSurface; opacity: searchMouse.containsMouse ? 0.06 : 0 }
                     MouseArea {
                         id: searchMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                        onClicked: (Desk.config.search || {}).enabled === false ? Dock.openSearch() : Search.toggle()
+                        onClicked: (Desk.config.search || {}).enabled === false ? Dock.openSearch() : Search.toggleOn(dockWin.slot.number)
                     }
                 }
             }
@@ -217,7 +249,7 @@ Window {
                 height: parent.height
                 spacing: 2
                 Repeater {
-                    model: Dock.apps
+                    model: dockWin.apps
                     delegate: Item {
                         id: tile
                         required property var modelData
@@ -233,8 +265,8 @@ Window {
                         readonly property real shift: {
                             var d = dockWin.dragIndex, to = dockWin.dragTarget;
                             if (d < 0 || index === d) return 0;
-                            if (index > d && index <= to) return -dockWin.slot;
-                            if (index < d && index >= to) return dockWin.slot;
+                            if (index > d && index <= to) return -dockWin.slotWidth;
+                            if (index < d && index >= to) return dockWin.slotWidth;
                             return 0;
                         }
                         transform: Translate {
@@ -358,7 +390,7 @@ Window {
                                 dockWin.hovered = -1;
                                 dockWin.dragIndex = tile.index;
                                 dockWin.dragOffset = dx;
-                                dockWin.dragTarget = Math.max(0, Math.min(dockWin.pinnedCount - 1, tile.index + Math.round(dx / dockWin.slot)));
+                                dockWin.dragTarget = Math.max(0, Math.min(dockWin.pinnedCount - 1, tile.index + Math.round(dx / dockWin.slotWidth)));
                             }
                             onReleased: {
                                 if (!dragged) return;
@@ -386,7 +418,7 @@ Window {
                                 } else {
                                     dockWin.menuApp = null;
                                     dockWin.pickerKey = "";
-                                    Dock.click(tile.modelData.key);
+                                    Dock.click(tile.modelData.key, dockWin.monitor);
                                 }
                             }
                         }
@@ -506,7 +538,7 @@ Window {
         HoverHandler { onHoveredChanged: hovered ? dockWin.keepPopups() : dockWin.releasePopups() }
 
         function placeThumbnails() {
-            if (!visible) { Dock.clearThumbnails(); return; }
+            if (!visible) { Dock.clearThumbnails(dockWin); return; }
             var items = [];
             for (var i = 0; i < pickerRepeater.count; i++) {
                 var card = pickerRepeater.itemAt(i);
@@ -514,7 +546,7 @@ Window {
                 var p = card.preview.mapToItem(null, 0, 0);
                 items.push({ hwnd: card.hwnd, x: p.x + 4, y: p.y + 4, w: card.preview.width - 8, h: card.preview.height - 8 });
             }
-            Dock.showThumbnails(items);
+            Dock.showThumbnails(dockWin, items);
         }
         Timer { id: thumbTimer; interval: 40; onTriggered: picker.placeThumbnails() }
         onVisibleChanged: { maskTimer.restart(); thumbTimer.restart(); }
@@ -581,7 +613,7 @@ Window {
                         onClicked: {
                             Dock.focusWindow(winCard.hwnd);
                             dockWin.pickerKey = "";
-                            Dock.clearThumbnails();
+                            Dock.clearThumbnails(dockWin);
                         }
                     }
                     IconButton {
@@ -598,7 +630,7 @@ Window {
     }
     Connections {
         target: picker
-        function onVisibleChanged() { if (!picker.visible) Dock.clearThumbnails(); }
+        function onVisibleChanged() { if (!picker.visible) Dock.clearThumbnails(dockWin); }
     }
 
     // ---- app menu --------------------------------------------------------------------
@@ -651,7 +683,7 @@ Window {
                 icon: Icons.close
                 text: dockWin.menuApp && dockWin.menuApp.windows.length > 1 ? "Close all windows" : "Close window"
                 danger: true
-                onClicked: { Dock.closeApp(dockWin.menuApp.key); dockWin.menuApp = null; }
+                onClicked: { Dock.closeApp(dockWin.menuApp.key, dockWin.monitor); dockWin.menuApp = null; }
             }
         }
     }
@@ -677,7 +709,7 @@ Window {
     // ---- search ----------------------------------------------------------------------
     SearchPanel {
         id: search
-        visible: Search.open
+        visible: dockWin.searchHere
         onVisibleChanged: maskTimer.restart()
         onHeightChanged: maskTimer.restart()
         x: Math.round((dockWin.width - width) / 2)
@@ -694,21 +726,21 @@ Window {
     Connections {
         target: Search
         function onOpenChanged() {
-            if (Search.open) {
+            if (dockWin.searchHere) {
                 dockWin.menuApp = null;
                 dockWin.playerOpen = false;
                 dockWin.searchArmed = false;
-                Dock.setActivatable(true);
-                Search.focusWindow(dockWin);
-                Qt.callLater(search.focusInput);
+                Dock.setActivatable(dockWin, true);
+                // Shown first (it may have been idle behind a fullscreen app), then focused.
+                Qt.callLater(function () { Search.focusWindow(dockWin); search.focusInput(); });
                 armTimer.restart();
             } else {
-                Dock.setActivatable(false);
+                Dock.setActivatable(dockWin, false);
             }
             maskTimer.restart();
         }
     }
-    onActiveChanged: if (!active && Search.open && searchArmed) Search.setOpen(false)
+    onActiveChanged: if (!active && searchHere && searchArmed) Search.setOpen(false)
 
     // ---- player popup ------------------------------------------------------------------
     Item {

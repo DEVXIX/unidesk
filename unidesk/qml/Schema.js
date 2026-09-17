@@ -11,7 +11,11 @@ var types = [
     { type: "calendar", label: "Calendar",      icon: "calendar_month" },
     { type: "profile",  label: "Profile",       icon: "lock" },
     { type: "github",   label: "Code activity", icon: "commit" },
-    { type: "picture",  label: "Picture",       icon: "star" }
+    { type: "picture",  label: "Picture",       icon: "star" },
+    { type: "network",  label: "Network speed", icon: "swap_vert" },
+    { type: "storage",  label: "Storage",       icon: "hard_drive" },
+    { type: "clipboard", label: "Clipboard",    icon: "content_paste" },
+    { type: "notifications", label: "Notifications", icon: "notifications" }
 ];
 
 var tones = ["primary", "secondary", "tertiary", "surface"];
@@ -63,6 +67,27 @@ var fields = {
         { key: "src", label: "Image (path, wallpaper or artwork)", kind: "text", def: "wallpaper" },
         { key: "shape", label: "Shape", kind: "choice", options: ["star", "cookie", "burst", "clover", "squircle", "circle", "rounded"], def: "star" },
         { key: "size", label: "Size", kind: "slider", min: 120, max: 900, step: 10, def: 400 }
+    ],
+    network: [
+        { key: "units", label: "Units", kind: "choice", options: ["bytes", "bits"], def: "bytes" },
+        { key: "graph", label: "Graph", kind: "bool", def: true },
+        { key: "tone", label: "Colour", kind: "choice", options: tones, def: "surface" },
+        { key: "width", label: "Width", kind: "slider", min: 240, max: 560, step: 10, def: 320 }
+    ],
+    storage: [
+        { key: "drives", label: "Drives (all, or e.g. C D)", kind: "text", def: "all" },
+        { key: "tone", label: "Colour", kind: "choice", options: tones, def: "surface" },
+        { key: "width", label: "Width", kind: "slider", min: 240, max: 560, step: 10, def: 320 }
+    ],
+    clipboard: [
+        { key: "items", label: "Rows shown (scroll for more)", kind: "slider", min: 2, max: 10, step: 1, def: 5 },
+        { key: "images", label: "Keep copied images", kind: "bool", def: true },
+        { key: "width", label: "Width", kind: "slider", min: 260, max: 560, step: 10, def: 340 }
+    ],
+    notifications: [
+        { key: "items", label: "Rows shown (scroll for more)", kind: "slider", min: 1, max: 8, step: 1, def: 4 },
+        { key: "text", label: "Message text", kind: "bool", def: true },
+        { key: "width", label: "Width", kind: "slider", min: 280, max: 560, step: 10, def: 360 }
     ]
 };
 

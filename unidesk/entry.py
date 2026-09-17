@@ -14,10 +14,13 @@ def run() -> int:
         os.environ.setdefault("QT_FORCE_STDERR_LOGGING", "1")
 
     if "--restore-taskbar" in sys.argv:
-        # Used by the uninstaller (and handy if unidesk was killed): bring the Windows taskbar back.
+        # Used by the uninstaller (and handy if unidesk was killed): bring the Windows
+        # taskbars back, and other apps' title bar and border colours.
+        from unidesk import frames
         from unidesk.dock import winapi
 
         winapi.ghost_taskbar(False)
+        frames.reset_all_windows()
         return 0
 
     from unidesk.app import main

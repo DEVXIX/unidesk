@@ -99,9 +99,13 @@ class Dock(QObject):
         self._network = "lan"
         self._hooks = []
         self._running = False
+        self._generation = 0
         self._own_pid = os.getpid()
-        self._window = None
-        self._reserved = 0
+        self._docks: list = []                     # one dock window per screen
+        self._reserved: dict[int, tuple] = {}      # dock hwnd -> (monitor, height in physical px) it reserved
+        self._wanted: dict[int, tuple] = {}        # dock hwnd -> (window, logical height), to re-apply
+        self._thumbs: dict[int, winapi.Thumbnails] = {}
+        self._tray = 0
         self._autohide_before: bool | None = None
         self._ghosted = False
         self._badges: list[dict] = []
@@ -146,15 +150,22 @@ class Dock(QObject):
 
     # ---- lifecycle -------------------------------------------------------------
 
+    @property
+    def running(self) -> bool:
+        return self._running
+
     def start(self, passive: bool = False):
         """passive: read apps only (snapshot tests) - no hooks, pins or taskbar changes."""
         if self._running:
             return
         self._running = True
+        self._generation += 1
         winapi.com_init()
         if passive:
             self.refresh()
             return
+        # Before seed_pins(): saving the pins reapplies the taskbar settings, which turns auto-hide off.
+        self._autohide_before = winapi.taskbar_autohide()
         self.seed_pins()
         self._proc = WinEventProc(lambda *_: self._debounce.start())
         for low, high in ((EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND), (EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND),
@@ -167,20 +178,26 @@ class Dock(QObject):
         self._status.start()
         self._update_status()
         self.refresh()
-        self._autohide_before = winapi.taskbar_autohide()
         self._apply_taskbar()
         self._keep_hidden.start()
         threading.Thread(target=self._badge_loop, daemon=True).start()
 
     def _apply_taskbar(self):
-        """Keep the real taskbar invisible and click-through (not hidden: a hidden
-        taskbar stops reporting badges). Explorer sometimes undoes it; redo it."""
+        """Keep the real taskbars invisible and click-through (not hidden: a hidden
+        taskbar stops reporting badges): the main one, and the other screens' ones
+        when those have a dock too. Explorer sometimes undoes it; redo it."""
+        tray = winapi.main_tray()
+        if tray and tray != self._tray:
+            restarted = bool(self._tray)
+            self._tray = tray
+            if restarted:  # Explorer restarted and forgot the docks' reserved space; let it settle first
+                QTimer.singleShot(1500, self._reserve_again)
+        self._reapply_reservations()  # a dock that moved screens reserves on its new one
         want = bool(self.settings.get("enabled", True)) and bool(self.settings.get("hide_windows_taskbar", True))
         if want:
             if winapi.taskbar_autohide():
                 winapi.set_taskbar_autohide(False)  # auto-hide would slide it back in over the dock
-            if not winapi.taskbar_ghosted():
-                winapi.ghost_taskbar(True)
+            winapi.ghost_taskbars(main=True, secondary=self.settings.get("all_screens", True) is not False)
             self._ghosted = True
         elif self._ghosted:
             winapi.ghost_taskbar(False)
@@ -202,7 +219,8 @@ class Dock(QObject):
             print(f"[unidesk] badges unavailable: {e}")
             return
         last = None
-        while self._running:
+        generation = self._generation
+        while self._running and generation == self._generation:
             if not self.suspended and self.settings.get("badges", True):
                 try:
                     badges = reader.read()
@@ -239,60 +257,91 @@ class Dock(QObject):
         self._hooks.clear()
         self._poll.stop()
         self._status.stop()
-        if self._window is not None:
-            winapi.release_reservation(int(self._window.winId()))
+        for hwnd in list(self._reserved):
+            winapi.release_reservation(hwnd)
+        self._reserved.clear()
+        for thumbs in self._thumbs.values():
+            thumbs.clear()
         self._running = False
+
+    # ---- dock windows (one per screen) -----------------------------------------------
 
     @Slot(QObject)
     def registerWindow(self, window):
-        self._window = window
+        if not any(w is window for w in self._docks):
+            self._docks.append(window)
         if os.environ.get("UNIDESK_SNAPSHOT"):
             return
         hwnd = int(window.winId())
         winapi.set_noactivate(hwnd)
         winapi.keep_on_top(hwnd)
 
-    @Slot("QVariantList")
-    def showThumbnails(self, items):
-        """[{hwnd, x, y, w, h}] in the dock window's logical pixels."""
-        if self._window is None:
+    def forget_window(self, window):
+        """A dock window is closing (its screen went away, or the dock was turned off)."""
+        if not any(w is window for w in self._docks):
             return
-        if not hasattr(self, "_thumbs"):
-            self._thumbs = winapi.Thumbnails()
-        ratio = self._window.devicePixelRatio()
-        rows = [(int(i["hwnd"]), int(i["x"] * ratio), int(i["y"] * ratio), int(i["w"] * ratio), int(i["h"] * ratio)) for i in items]
-        self._thumbs.show(int(self._window.winId()), rows)
+        self._docks = [w for w in self._docks if w is not window]
+        hwnd = int(window.winId())
+        if self._reserved.pop(hwnd, None) is not None:
+            winapi.release_reservation(hwnd)
+        self._wanted.pop(hwnd, None)
+        thumbs = self._thumbs.pop(hwnd, None)
+        if thumbs is not None:
+            thumbs.clear()
 
-    @Slot()
-    def clearThumbnails(self):
-        if hasattr(self, "_thumbs"):
-            self._thumbs.clear()
+    @Slot(QObject, "QVariantList")
+    def showThumbnails(self, window, items):
+        """[{hwnd, x, y, w, h}] in the dock window's logical pixels."""
+        hwnd = int(window.winId())
+        thumbs = self._thumbs.setdefault(hwnd, winapi.Thumbnails())
+        ratio = window.devicePixelRatio()
+        rows = [(int(i["hwnd"]), int(i["x"] * ratio), int(i["y"] * ratio), int(i["w"] * ratio), int(i["h"] * ratio)) for i in items]
+        thumbs.show(hwnd, rows)
+
+    @Slot(QObject)
+    def clearThumbnails(self, window):
+        thumbs = self._thumbs.get(int(window.winId()))
+        if thumbs is not None:
+            thumbs.clear()
 
     @Slot(int)
     def closeWindow(self, hwnd: int):
         winapi.close(hwnd)
         QTimer.singleShot(400, self.refresh)
 
-    @Slot(bool)
-    def setActivatable(self, on: bool):
-        if self._window is None:
-            return
-        hwnd = int(self._window.winId())
+    @Slot(QObject, bool)
+    def setActivatable(self, window, on: bool):
+        hwnd = int(window.winId())
         ex = winapi.user32.GetWindowLongPtrW(hwnd, winapi.GWL_EXSTYLE)
         ex = ex & ~winapi.WS_EX_NOACTIVATE if on else ex | winapi.WS_EX_NOACTIVATE
         winapi.user32.SetWindowLongPtrW(hwnd, winapi.GWL_EXSTYLE, ex)
 
-    @Slot(int)
-    def reserve(self, height: int):
-        """Keep maximised windows above the dock (like the real taskbar does)."""
-        if self._window is None or os.environ.get("UNIDESK_SNAPSHOT") or not self.settings.get("reserve_space", True) or height == self._reserved:
+    @Slot(QObject, int)
+    def reserve(self, window, height: int):
+        """Keep maximised windows above the dock on its screen (like the real taskbar does)."""
+        if os.environ.get("UNIDESK_SNAPSHOT"):
             return
-        self._reserved = height
-        screen = self._window.screen().geometry()
-        ratio = self._window.devicePixelRatio()
-        winapi.reserve_bottom(int(self._window.winId()),
-                              (int(screen.left() * ratio), int(screen.top() * ratio), int((screen.right() + 1) * ratio), int((screen.bottom() + 1) * ratio)),
-                              int(height * ratio))
+        hwnd = int(window.winId())
+        self._wanted[hwnd] = (window, height)
+        if not self.settings.get("reserve_space", True):
+            if self._reserved.pop(hwnd, None) is not None:
+                winapi.release_reservation(hwnd)
+            return
+        # Keyed by monitor too: a dock window can be created before it is moved onto its screen.
+        placed = (winapi.window_monitor(hwnd), int(round(height * window.devicePixelRatio())))
+        if self._reserved.get(hwnd) == placed:
+            return
+        self._reserved[hwnd] = placed
+        winapi.reserve_bottom(hwnd, placed[1])
+
+    def _reapply_reservations(self):
+        for window, height in list(self._wanted.values()):
+            self.reserve(window, height)
+
+    def _reserve_again(self):
+        """Reserve from scratch (Explorer's list of reserved space was lost)."""
+        self._reserved.clear()
+        self._reapply_reservations()
 
     # ---- apps --------------------------------------------------------------------
 
@@ -319,7 +368,8 @@ class Dock(QObject):
             if key not in groups:
                 groups[key] = {"key": key, "name": "", "exe": w["exe"], "aumid": w["aumid"], "lnk": "", "pinned": False, "windows": []}
                 order.append(key)
-            groups[key]["windows"].append({"hwnd": w["hwnd"], "title": w["title"], "minimized": w["minimized"]})
+            groups[key]["windows"].append({"hwnd": w["hwnd"], "title": w["title"], "minimized": w["minimized"],
+                                           "monitor": w["monitor"], "active": w["hwnd"] == fg})
 
         now = time.monotonic()
         for key, started in list(self._launching.items()):
@@ -441,17 +491,19 @@ class Dock(QObject):
 
     # ---- QML: actions -------------------------------------------------------------
 
-    @Slot(str)
-    def click(self, key: str):
-        """Focus the app; minimise it if it is already in front; cycle its windows."""
+    @Slot(str, str)
+    def click(self, key: str, monitor: str):
+        """Focus the app; minimise it if it is already in front; cycle its windows.
+        monitor: only that screen's windows count (a dock showing just its screen's apps)."""
         app = self._find(key)
         if not app:
             return
-        if not app["windows"]:
+        windows = [w for w in app["windows"] if not monitor or w["monitor"] == monitor]
+        if not windows:
             self.launch(key)
             return
         fg = winapi.foreground()
-        hwnds = [w["hwnd"] for w in app["windows"]]
+        hwnds = [w["hwnd"] for w in windows]
         if fg in hwnds:
             if len(hwnds) == 1:
                 winapi.minimize(fg)
@@ -495,11 +547,12 @@ class Dock(QObject):
         for delay in (500, 1200, 2500, 4000, 7000):
             QTimer.singleShot(delay, self.refresh)
 
-    @Slot(str)
-    def closeApp(self, key: str):
+    @Slot(str, str)
+    def closeApp(self, key: str, monitor: str):
         app = self._find(key)
         for w in (app or {}).get("windows", []):
-            winapi.close(w["hwnd"])
+            if not monitor or w["monitor"] == monitor:
+                winapi.close(w["hwnd"])
 
     @Slot(str, bool)
     def setPinned(self, key: str, pinned: bool):

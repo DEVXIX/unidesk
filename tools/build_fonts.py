@@ -38,6 +38,8 @@ calendar_month schedule expand_more download upload
 tune widgets open_in_full remove
 wifi lan wifi_off volume_up expand_less search push_pin open_in_new
 calculate language folder
+content_paste content_copy image notes delete_sweep
+swap_vert arrow_downward arrow_upward usb notifications_off clear_all
 """.split()
 
 

@@ -5,11 +5,14 @@
 Thanks for installing unidesk! It adds three things to your desktop:
 
   - WIDGETS on your wallpaper: time, clock, music with synced lyrics, weather,
-    CPU / RAM / GPU, calendar, profile card, GitHub/Gitea activity, pictures.
+    CPU / RAM / GPU, network speed, storage, clipboard history,
+    notifications, calendar, profile card, GitHub/Gitea activity, pictures.
   - A DOCK at the bottom that replaces the Windows taskbar.
   - SEARCH for your apps, settings, maths, files and the web.
 
-Colours follow the album art of the song you're playing (Material You).
+Colours follow the album art of the song you're playing (Material You),
+and other apps' title bars and window borders take the same colours.
+Every monitor gets its own widgets and dock.
 You can change that, and nearly everything else, in Settings.
 
 
@@ -30,8 +33,11 @@ You can change that, and nearly everything else, in Settings.
   Widgets
     Right-click any widget  ->  its options (size, style, colours...)
     In edit mode:
-      drag a widget            move it (snaps to a grid)
+      drag a widget            move it (snaps to a grid); let go over
+                               another screen to move it there
       drag its corner handle   make it bigger or smaller
+      "Sticks to" (options)    the corner, edge or centre it keeps its
+                               distance from on screens of other sizes
       click it                 open its options
       red bin button           remove it (click twice)
       "Add widget" (top)       bring back or add widgets
@@ -87,8 +93,18 @@ Your pinned taskbar apps are copied into the dock on first start.
     soon as you save. Every option is explained in the file.
   - Tokens you enter stay in that file on your PC. They are only sent to
     GitHub / your Gitea server.
-  - Widgets and the dock hide while a game or video is fullscreen, so they
-    cost nothing while you play.
+  - Widgets and the dock hide while a game or video is fullscreen on their
+    screen, so they cost nothing while you play.
+  - The clipboard widget keeps what you copy in memory only, and skips
+    copies password managers mark as private. The notifications widget
+    reads Notification Center; clearing it there only hides them.
+  - Title bar colours reach apps with a standard title bar. Apps that
+    draw their own (File Explorer, Terminal, browsers) get the border
+    colour only. Settings > "Other apps' title bars" turns it off.
+  - Settings > "Theme VS Code and Windows Terminal too" writes unidesk's
+    colours into their settings (title bar, menus, tabs, status bar,
+    scroll bars). Your own values come back when you turn it off. If VS
+    Code's Settings Sync is on, it syncs these colours as well.
   - The GPU tile needs an NVIDIA graphics card.
   - Unread badges on dock icons come from the Windows taskbar, so they
     appear for apps that show badges there (Discord, Telegram, ...).

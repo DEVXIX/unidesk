@@ -38,7 +38,7 @@ Item {
     // 4x a second only while something plays and time is on screen.
     Timer {
         interval: 250
-        running: root.isPlaying && !Desk.suspended
+        running: root.isPlaying && !!root.Window.window && root.Window.window.visible
         repeat: true
         onTriggered: root.tick()
     }

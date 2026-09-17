@@ -50,7 +50,9 @@ Filename: "{app}\unidesk.exe"; Description: "Launch unidesk"; Flags: nowait post
 Filename: "{app}\unidesk.exe"; Flags: nowait; Check: WizardSilent
 
 [UninstallRun]
-; Stop unidesk, then make sure the Windows taskbar is visible again.
+; Ask unidesk to quit (it puts the taskbar and window colours back itself), stop it
+; if it's still there, then make sure the Windows taskbar is visible again.
+Filename: "{app}\unidesk.exe"; Parameters: "--quit"; Flags: runhidden waituntilterminated; RunOnceId: "QuitUnidesk"
 Filename: "{cmd}"; Parameters: "/c taskkill /im unidesk.exe /f"; Flags: runhidden; RunOnceId: "StopUnidesk"
 Filename: "{app}\unidesk.exe"; Parameters: "--restore-taskbar"; Flags: runhidden waituntilterminated; RunOnceId: "RestoreTaskbar"
 

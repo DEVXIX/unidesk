@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Controls.Basic
 import "../Icons.js" as Icons
 
-// One editable option: a switch, a row of choice chips, a slider or a text box.
+// One editable option: a switch, a row of choice chips, a slider, a text box,
+// or an anchor picker (a little screen with its corners, edges and centre).
 // Emits changed(value) when the user commits (slider release, Enter, click).
 Column {
     id: row
@@ -78,6 +79,43 @@ Column {
                     UText { id: chipText; text: modelData; size: 13; color: parent.parent.on ? Theme.c.onSecondaryContainer : Theme.c.onSurfaceVariant; anchors.verticalCenter: parent.verticalCenter }
                 }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: row.changed(modelData) }
+            }
+        }
+    }
+
+    // anchor picker
+    Rectangle {
+        visible: row.field.kind === "anchor"
+        width: 132; height: 82
+        radius: 14
+        color: Theme.c.surfaceContainerHighest
+        border.width: 1
+        border.color: Theme.c.outlineVariant
+        Grid {
+            id: spots
+            anchors.fill: parent
+            anchors.margins: 6
+            columns: 3
+            Repeater {
+                model: row.field.kind === "anchor" ? ["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"] : []
+                Item {
+                    id: spot
+                    required property string modelData
+                    readonly property bool on: String(row.current) === modelData
+                    width: spots.width / 3; height: spots.height / 3
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: spot.on ? 28 : spotMouse.containsMouse ? 14 : 10
+                        height: spot.on ? 16 : spotMouse.containsMouse ? 14 : 10
+                        radius: height / 2
+                        color: spot.on ? Theme.c.primary : "transparent"
+                        border.width: spot.on ? 0 : 1.5
+                        border.color: Theme.c.outline
+                        Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                        Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    }
+                    MouseArea { id: spotMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: row.changed(spot.modelData) }
+                }
             }
         }
     }

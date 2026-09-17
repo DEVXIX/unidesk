@@ -9,6 +9,8 @@ import uuid
 from ctypes import wintypes
 from pathlib import Path
 
+from ..desktop import MONITORINFOEXW, MONITOR_DEFAULTTONEAREST, window_monitor
+
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 shell32 = ctypes.WinDLL("shell32", use_last_error=True)
@@ -47,6 +49,9 @@ for name, res, args in [
     ("PostMessageW", wintypes.BOOL, [HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]),
     ("AttachThreadInput", wintypes.BOOL, [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]),
     ("FindWindowW", HWND, [wintypes.LPCWSTR, wintypes.LPCWSTR]),
+    ("FindWindowExW", HWND, [HWND, HWND, wintypes.LPCWSTR, wintypes.LPCWSTR]),
+    ("MonitorFromWindow", wintypes.HMONITOR, [HWND, wintypes.DWORD]),
+    ("GetMonitorInfoW", wintypes.BOOL, [wintypes.HMONITOR, ctypes.c_void_p]),
     ("GetKeyboardLayout", wintypes.HKL, [wintypes.DWORD]),
     ("keybd_event", None, [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_void_p]),
     ("SetWindowPos", wintypes.BOOL, [HWND, HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]),
@@ -157,7 +162,7 @@ def app_windows(own_pid: int) -> list[dict]:
         if not exe:
             return True
         out.append({"hwnd": int(hwnd), "title": title, "exe": exe, "aumid": aumid, "cls": cls,
-                    "minimized": bool(user32.IsIconic(hwnd))})
+                    "minimized": bool(user32.IsIconic(hwnd)), "monitor": window_monitor(hwnd)})
         return True
 
     user32.EnumWindows(EnumProc(cb), 0)
@@ -249,16 +254,27 @@ def _abd(hwnd=None) -> APPBARDATA:
     return abd
 
 
-def reserve_bottom(hwnd: int, screen: tuple[int, int, int, int], height: int):
-    """Register as an appbar so maximised windows stop above the dock."""
-    left, top, right, bottom = screen
+def reserve_bottom(hwnd: int, height: int):
+    """Register as an appbar on the dock's monitor so maximised windows stop
+    above the dock. Only what the (hidden) Windows taskbar doesn't already keep
+    free is added, so windows don't stop a taskbar's height short of the dock."""
+    info = MONITORINFOEXW()
+    info.cbSize = ctypes.sizeof(MONITORINFOEXW)
+    hmon = user32.MonitorFromWindow(HWND(hwnd), MONITOR_DEFAULTTONEAREST)
+    if not hmon or not user32.GetMonitorInfoW(hmon, ctypes.byref(info)):
+        return
+    m = info.rcMonitor
     abd = _abd(hwnd)
     abd.uCallbackMessage = 0x0400 + 0x2A
     shell32.SHAppBarMessage(ABM_NEW, ctypes.byref(abd))
     abd.uEdge = ABE_BOTTOM
-    abd.rc = wintypes.RECT(left, bottom - height, right, bottom)
+    abd.rc = wintypes.RECT(m.left, m.bottom - height, m.right, m.bottom)
     shell32.SHAppBarMessage(ABM_QUERYPOS, ctypes.byref(abd))
-    abd.rc.top = abd.rc.bottom - height
+    extra = height - (m.bottom - abd.rc.bottom)  # QUERYPOS moved us above what others reserve
+    if extra <= 0:
+        release_reservation(hwnd)
+        return
+    abd.rc.top = abd.rc.bottom - extra
     shell32.SHAppBarMessage(ABM_SETPOS, ctypes.byref(abd))
 
 
@@ -426,28 +442,48 @@ user32.SetLayeredWindowAttributes.argtypes = [HWND, wintypes.DWORD, ctypes.c_uby
 user32.SetLayeredWindowAttributes.restype = wintypes.BOOL
 
 
-def _trays() -> list:
+def main_tray() -> int:
+    return int(user32.FindWindowW("Shell_TrayWnd", None) or 0)
+
+
+def _trays(secondary: bool = True) -> list:
+    """The main taskbar, and the ones on other monitors."""
     trays = []
     main = user32.FindWindowW("Shell_TrayWnd", None)
     if main:
         trays.append(main)
+    other = user32.FindWindowExW(None, None, "Shell_SecondaryTrayWnd", None) if secondary else None
+    while other:
+        trays.append(other)
+        other = user32.FindWindowExW(None, other, "Shell_SecondaryTrayWnd", None)
     return trays
 
 
-def taskbar_ghosted() -> bool:
-    return all(user32.GetWindowLongPtrW(t, GWL_EXSTYLE) & WS_EX_TRANSPARENT for t in _trays())
+def _set_ghost(tray, on: bool):
+    ex = user32.GetWindowLongPtrW(tray, GWL_EXSTYLE)
+    if on:
+        user32.SetWindowLongPtrW(tray, GWL_EXSTYLE, ex | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+        user32.SetLayeredWindowAttributes(tray, 0, 0, LWA_ALPHA)
+    else:
+        user32.SetLayeredWindowAttributes(tray, 0, 255, LWA_ALPHA)
+        user32.SetWindowLongPtrW(tray, GWL_EXSTYLE, ex & ~(WS_EX_LAYERED | WS_EX_TRANSPARENT))
+    user32.ShowWindow(tray, 8)  # SW_SHOWNA
+
+
+def ghost_taskbars(main: bool, secondary: bool):
+    """Ghost (or give back) the main taskbar and the other monitors' ones,
+    touching only those not already in the wanted state."""
+    first = main_tray()
+    for tray in _trays():
+        want = main if int(tray) == first else secondary
+        if bool(user32.GetWindowLongPtrW(tray, GWL_EXSTYLE) & WS_EX_TRANSPARENT) != want:
+            _set_ghost(tray, want)
 
 
 def ghost_taskbar(on: bool):
+    """Every taskbar at once (used by --restore-taskbar)."""
     for tray in _trays():
-        ex = user32.GetWindowLongPtrW(tray, GWL_EXSTYLE)
-        if on:
-            user32.SetWindowLongPtrW(tray, GWL_EXSTYLE, ex | WS_EX_LAYERED | WS_EX_TRANSPARENT)
-            user32.SetLayeredWindowAttributes(tray, 0, 0, LWA_ALPHA)
-        else:
-            user32.SetLayeredWindowAttributes(tray, 0, 255, LWA_ALPHA)
-            user32.SetWindowLongPtrW(tray, GWL_EXSTYLE, ex & ~(WS_EX_LAYERED | WS_EX_TRANSPARENT))
-        user32.ShowWindow(tray, 8)  # SW_SHOWNA
+        _set_ghost(tray, on)
 
 
 # ---- badges (read from the real taskbar through UI Automation) -----------------------
@@ -477,7 +513,7 @@ class BadgeReader:
 
         UIA = self._uia_mod
         out = []
-        for tray in _trays():
+        for tray in _trays(secondary=False):  # the other taskbars show the same buttons
             try:
                 buttons = self._uia.ElementFromHandle(tray).FindAll(UIA.TreeScope_Descendants, self._button_condition)
             except Exception:

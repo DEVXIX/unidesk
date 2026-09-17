@@ -6,6 +6,7 @@ Desktop widgets, a dock and search for Windows 11, in a Material You style. Colo
   - time and an analog clock
   - music with synced lyrics
   - weather, CPU / RAM / GPU and a calendar
+  - network speed, storage, clipboard history and notifications
   - a profile card
   - GitHub + Gitea activity
   - picture frames
@@ -13,8 +14,10 @@ Desktop widgets, a dock and search for Windows 11, in a Material You style. Colo
   - pinned and running apps with unread badges
   - live window previews
   - now playing, a clock and quick settings
+- **Every monitor:** widgets and a dock on each screen. Drag a widget onto another screen to move it there. Widgets keep their distance from the nearest edge, so layouts fit wide and ultrawide monitors.
+- **Matching windows:** other apps' title bars and borders take the same colours (Windows 11). Optionally, VS Code and Windows Terminal are themed too (title bar, menus, tabs, status bar and scroll bars). With the [Windhawk mod](windhawk/README.md), so are classic apps' menus, scroll bars, status bars and toolbars.
 - **Search** (Alt+Space): apps, maths, Windows settings, files and the web.
-- **Low overhead:** it is Qt Quick (PySide6), not a browser. Everything hides while a game or video is fullscreen.
+- **Low overhead:** it is Qt Quick (PySide6), not a browser. Each screen goes idle while a game or video is fullscreen on it.
 
 ## Install
 

@@ -3,16 +3,20 @@ import QtQuick.Shapes
 import "components"
 import "Icons.js" as Icons
 
-// Places one widget on the desk. In edit mode: drag to move (snaps to the
-// grid), drag the corner handle to resize, and buttons to customize or
-// remove it. Position and size are saved on release.
+// Places one widget on its screen's desk. In edit mode: drag to move (snaps to
+// the grid; let go over another screen to move it there), drag the corner
+// handle to resize, and buttons to customize or remove it. Position and size
+// are saved on release, relative to the nearest corner, edge or the centre,
+// so the widget keeps its place on a screen of another size.
 Item {
     id: frame
     property var spec: ({})
+    property QtObject slot: null
     readonly property string widgetId: spec.id || ""
     readonly property var types: ({
         time: "Time", clock: "Clock", media: "Media", system: "System", weather: "Weather",
-        calendar: "Calendar", profile: "Profile", github: "GitHub", picture: "Picture"
+        calendar: "Calendar", profile: "Profile", github: "GitHub", picture: "Picture",
+        network: "Network", storage: "Storage", clipboard: "Clipboard", notifications: "Notifications"
     })
 
     property bool dragging: false
@@ -20,17 +24,42 @@ Item {
     property real dragX: 0
     property real dragY: 0
     property real liveScale: 1
+    property real resizeX: 0
+    property real resizeY: 0
     property bool selected: false
 
     readonly property real widgetScale: (resizing ? liveScale : (spec.scale || 1)) * Theme.scale
     readonly property real baseWidth: loader.item ? loader.item.width : unknown.width
     readonly property real baseHeight: loader.item ? loader.item.height : unknown.height
 
-    signal customize()
+    // Where it sits: x / y measured inward from its anchor (layout.py does the reverse).
+    readonly property string anchorName: spec.anchor || "top-left"
+    readonly property real areaWidth: parent ? parent.width : 0
+    readonly property real areaHeight: parent ? parent.height : 0
+    readonly property real homeX: /left$/.test(anchorName) ? (spec.x || 0)
+                                : /right$/.test(anchorName) ? areaWidth - width - (spec.x || 0)
+                                : (areaWidth - width) / 2 + (spec.x || 0)
+    readonly property real homeY: /^top/.test(anchorName) ? (spec.y || 0)
+                                : /^bottom/.test(anchorName) ? areaHeight - height - (spec.y || 0)
+                                : (areaHeight - height) / 2 + (spec.y || 0)
+    // Always fully on screen, whatever the resolution.
+    function onScreenX(v) { return Math.round(Math.max(0, Math.min(areaWidth - width, v))); }
+    function onScreenY(v) { return Math.round(Math.max(0, Math.min(areaHeight - height, v))); }
+
+    function save(extra) {
+        var placed = Desk.placeWidget(Object.assign({
+            id: frame.widgetId, display: frame.slot ? frame.slot.number : 1, screen: frame.spec.screen || 1,
+            left: frame.x, top: frame.y, width: frame.width, height: frame.height, scale: frame.spec.scale || 1
+        }, extra || {}));
+        // Still shown on this screen: nothing reloads, so keep the saved placement here.
+        if (!frame.slot || placed.display === frame.slot.number) frame.spec = Object.assign({}, frame.spec, placed);
+    }
+    function toggleOptions() { Desk.select(Desk.selected === frame.widgetId ? "" : frame.widgetId); }
+
     signal geometryMoved()
 
-    x: dragging ? dragX : spec.x
-    y: dragging ? dragY : spec.y
+    x: dragging ? dragX : resizing ? resizeX : onScreenX(homeX)
+    y: dragging ? dragY : resizing ? resizeY : onScreenY(homeY)
     width: Math.round(baseWidth * widgetScale)
     height: Math.round(baseHeight * widgetScale)
     z: dragging || resizing ? 10 : selected ? 5 : 0
@@ -95,29 +124,31 @@ Item {
                 anchors.margins: -6
                 cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                 property point start
+                property point grab
                 property real startX
                 property real startY
                 function snap(v) { return Desk.grid > 0 ? Math.round(v / Desk.grid) * Desk.grid : Math.round(v); }
                 onPressed: (e) => {
                     start = mapToItem(frame.parent, e.x, e.y);
-                    startX = frame.spec.x; startY = frame.spec.y;
+                    grab = mapToItem(frame, e.x, e.y);
+                    startX = frame.x; startY = frame.y;
                     frame.dragX = startX; frame.dragY = startY;
                     frame.dragging = true;
                 }
                 onPositionChanged: (e) => {
                     if (!pressed) return;
                     var p = mapToItem(frame.parent, e.x, e.y);
-                    frame.dragX = Math.max(0, Math.min(frame.parent.width - frame.width, snap(startX + p.x - start.x)));
-                    frame.dragY = Math.max(0, Math.min(frame.parent.height - frame.height, snap(startY + p.y - start.y)));
+                    frame.dragX = Math.max(0, Math.min(frame.areaWidth - frame.width, snap(startX + p.x - start.x)));
+                    frame.dragY = Math.max(0, Math.min(frame.areaHeight - frame.height, snap(startY + p.y - start.y)));
                 }
-                onReleased: {
-                    var moved = frame.dragX !== frame.spec.x || frame.dragY !== frame.spec.y;
-                    if (moved) {
-                        Desk.placeWidget(frame.widgetId, frame.dragX, frame.dragY, frame.spec.scale || 1);
-                        frame.spec = Object.assign({}, frame.spec, { x: frame.dragX, y: frame.dragY });
-                    }
+                onReleased: (e) => {
+                    var cursor = mapToGlobal(e.x, e.y);
+                    var over = Desk.screenAt(cursor.x, cursor.y);
+                    var elsewhere = over > 0 && frame.slot && over !== frame.slot.number;
+                    var moved = elsewhere || frame.dragX !== startX || frame.dragY !== startY;
+                    if (moved) frame.save({ left: frame.dragX, top: frame.dragY, cursorX: cursor.x, cursorY: cursor.y, grabX: grab.x, grabY: grab.y });
                     frame.dragging = false;
-                    if (!moved) frame.customize();   // a plain click opens its options
+                    if (!moved) frame.toggleOptions();   // a plain click opens its options
                 }
             }
 
@@ -142,7 +173,7 @@ Item {
                 IconButton {
                     icon: Icons.tune; size: 34; iconSize: 19
                     color: Theme.c.primaryContainer; iconColor: Theme.c.onPrimaryContainer
-                    onClicked: frame.customize()
+                    onClicked: frame.toggleOptions()
                 }
                 IconButton {
                     id: removeButton
@@ -178,6 +209,9 @@ Item {
                         startScale = frame.spec.scale || 1;
                         startSpan = Math.max(40, frame.width + frame.height);
                         frame.liveScale = startScale;
+                        // The top-left corner stays put while resizing, whatever the anchor.
+                        frame.resizeX = frame.x;
+                        frame.resizeY = frame.y;
                         frame.resizing = true;
                     }
                     onPositionChanged: (e) => {
@@ -188,8 +222,7 @@ Item {
                         frame.liveScale = Math.max(0.4, Math.min(3, Math.round(s * 20) / 20));
                     }
                     onReleased: {
-                        Desk.placeWidget(frame.widgetId, frame.spec.x, frame.spec.y, frame.liveScale);
-                        frame.spec = Object.assign({}, frame.spec, { scale: frame.liveScale });
+                        frame.save({ scale: frame.liveScale, anchor: frame.anchorName });  // resizing keeps the anchor it has
                         frame.resizing = false;
                     }
                 }
@@ -204,7 +237,7 @@ Item {
         z: 20
         onClicked: {
             if (!Desk.editing) Desk.setEditing(true);
-            frame.customize();
+            Desk.select(frame.widgetId);
         }
     }
 

@@ -23,6 +23,12 @@ style:
   shadows: true
   animation_speed: 1.0  # 0.5 = snappier, 2 = slower
   scale: 1.0            # size of every widget at once
+  window_frames: themed # other apps' windows: themed (title bar, text and border colours) | border | off
+                        # (apps that draw their own title bar, like File Explorer or Terminal, only get the border)
+  app_themes: false     # true: also colour VS Code (title bar, menus, tabs, status bar, scroll bars) and
+                        # Windows Terminal (title bar, tab row, frame) by writing their settings, and classic
+                        # apps' menus, scroll bars, status bars and toolbars through the Windhawk mod in
+                        # windhawk/; your own values come back when you turn it off
 
 settings:
   grid: 10              # edit-mode snapping in pixels (0 = off)
@@ -41,6 +47,8 @@ settings:
 # quick icons. Right-click an app to pin/unpin it.
 dock:
   enabled: true
+  all_screens: true            # a dock on every monitor (false = only the main display)
+  apps: all                    # all | screen (each dock shows the apps with a window on its screen)
   hide_windows_taskbar: true   # make the real taskbar invisible while unidesk runs (restored on quit)
   badges: true                 # unread counts on app icons (read from the Windows taskbar)
   reserve_space: true          # maximised windows stop above the dock
@@ -58,15 +66,24 @@ search:
   hotkey: alt+space       # "" to turn off
   web: "https://www.google.com/search?q={q}"
 
-# Each widget: id (unique), type, x, y (pixels from the top-left of the usable
-# screen area), scale (1 = normal, 1.5 = half again as big), and options for
-# that type. In edit mode, drag a widget's corner handle to change its scale. Delete an entry to remove a widget,
-# copy one to add another.
+# Each widget: id (unique), type, where it goes, and options for that type.
+#   screen  which monitor: 1 = the main display (the default), 2, 3... = the others, left to right
+#   anchor  the corner, edge or centre it sticks to: top-left (the default), top, top-right,
+#           left, center, right, bottom-left, bottom, bottom-right
+#   x, y    pixels from that anchor, measured inward (with top-right, x is the gap to the right
+#           edge). Dropping a widget in edit mode picks the nearest anchor, so layouts fit any
+#           screen size, and dropping it on another screen moves it there.
+#   scale   1 = normal, 1.5 = half again as big (or drag its corner handle in edit mode)
+# Types: time, clock, media, weather, system, calendar, profile, github, picture,
+#   network (download and upload speed), storage (your drives), clipboard (recent copies, kept in
+#   memory only) and notifications (what's in Notification Center).
+# Delete an entry to remove a widget, copy one to add another.
 widgets:
 - id: time
   type: time
-  x: 710
-  y: 330
+  anchor: center
+  x: 0
+  y: -60
   options:
     format: 24h           # 24h | 12h
     seconds: false
@@ -94,29 +111,35 @@ widgets:
 
 - id: weather
   type: weather
-  x: 1476
+  anchor: top-right
+  x: 24
   y: 12
 
 - id: cpu
   type: system
-  x: 1476
+  anchor: top-right
+  x: 314
   y: 146
   options: {metric: cpu, tone: primary}          # metric: cpu | ram | disk | gpu | gpu-temp | vram
 
 - id: ram
   type: system
-  x: 1620
+  anchor: top-right
+  x: 170
   y: 146
   options: {metric: ram, tone: secondary}        # tone: primary | secondary | tertiary
 
 - id: gpu
   type: system
-  x: 1764
+  anchor: top-right
+  x: 26
   y: 146
   options: {metric: gpu, tone: tertiary}
+
 - id: profile
   type: profile
-  x: 1636
+  anchor: top-right
+  x: 4
   y: 290
   options:
     avatar: github          # github, or a path to an image
@@ -124,12 +147,14 @@ widgets:
 
 - id: calendar
   type: calendar
-  x: 1464
+  anchor: top-right
+  x: 176
   y: 556
   options: {view: week}       # week | month
 
 - id: github
   type: github
-  x: 1464
+  anchor: top-right
+  x: 26
   y: 684
   options: {weeks: 24, activity: 2}

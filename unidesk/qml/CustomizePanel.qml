@@ -7,7 +7,8 @@ import "Schema.js" as Schema
 // to config.yaml straight away and the widget updates live.
 Card {
     id: panel
-    property var spec: null
+    property Item target: null   // the selected WidgetFrame
+    readonly property var spec: target ? target.spec : null
     property bool confirmRemove: false
     signal close()
 
@@ -15,7 +16,7 @@ Card {
     width: 320
     height: Math.min(parent ? parent.height - 40 : 700, body.implicitHeight + 32)
     visible: spec !== null
-    onSpecChanged: confirmRemove = false
+    onTargetChanged: confirmRemove = false
 
     // Clicks inside the panel stay inside it.
     MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: (w) => w.accepted = true }
@@ -50,6 +51,24 @@ Card {
                 field: ({ key: "scale", label: "Size", kind: "slider", min: 0.4, max: 2.5, step: 0.05, def: 1 })
                 value: panel.spec ? panel.spec.scale : 1
                 onChanged: (v) => Desk.setOption(panel.spec.id, "scale", v)
+            }
+
+            OptionRow {
+                visible: Desk.screenCount > 1
+                field: ({
+                    key: "screen", label: "Screen", kind: "choice", def: "1",
+                    options: Array.from({ length: Desk.screenCount }, (_, i) => String(i + 1))
+                })
+                value: panel.spec ? String(panel.spec.display || 1) : "1"
+                onChanged: (v) => Desk.setOption(panel.spec.id, "screen", Number(v))
+            }
+
+            // Which corner, edge or the centre the widget keeps its distance
+            // from when the screen size changes. Changing it doesn't move it.
+            OptionRow {
+                field: ({ key: "anchor", label: "Sticks to", kind: "anchor", def: "top-left" })
+                value: panel.spec ? panel.spec.anchor : "top-left"
+                onChanged: (v) => { if (panel.target) panel.target.save({ anchor: v }); }
             }
 
             Repeater {

@@ -146,6 +146,8 @@ class Search(QObject):
         self._results: list[dict] = []
         self._query = ""
         self._open = False
+        self._screen = 1
+        self.screen_at_cursor = lambda: 1  # which screen's dock the hotkey opens search on; set by the app
         self._icons: dict[str, str] = {}
         self._icon_queue: list[tuple[str, str]] = []
         self._icon_lock = threading.Condition()
@@ -356,6 +358,11 @@ class Search(QObject):
     def open(self):
         return self._open
 
+    @Property(int, notify=openChanged)
+    def screen(self):
+        """The screen whose dock shows search."""
+        return self._screen
+
     @Slot(bool)
     def setOpen(self, on: bool):
         if on == self._open:
@@ -369,7 +376,21 @@ class Search(QObject):
 
     @Slot()
     def toggle(self):
+        if not self._open:
+            self._screen = self.screen_at_cursor()
         self.setOpen(not self._open)
+
+    @Slot(int)
+    def toggleOn(self, screen: int):
+        """The search box on one screen's dock: open there, or close if it's open there already."""
+        if self._open and self._screen == screen:
+            self.setOpen(False)
+        elif self._open:
+            self._screen = screen
+            self.openChanged.emit()
+        else:
+            self._screen = screen
+            self.setOpen(True)
 
     @Slot(QObject)
     def focusWindow(self, window):

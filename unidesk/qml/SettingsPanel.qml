@@ -32,10 +32,14 @@ Card {
             { path: "style.radius", label: "Corner roundness", kind: "slider", min: 0, max: 44, step: 2, def: 28 },
             { path: "style.card_opacity", label: "Card opacity", kind: "slider", min: 0.3, max: 1, step: 0.02, def: 0.92 },
             { path: "style.font_roundness", label: "Rounded letters", kind: "slider", min: 0, max: 100, step: 5, def: 60 },
-            { path: "style.shadows", label: "Shadows", kind: "bool", def: true }
+            { path: "style.shadows", label: "Shadows", kind: "bool", def: true },
+            { path: "style.window_frames", label: "Other apps' title bars and borders", kind: "choice", options: ["themed", "border", "off"], def: "themed" },
+            { path: "style.app_themes", label: "Theme other apps (VS Code, Terminal, classic apps with the Windhawk mod)", kind: "bool", def: false }
         ]},
         { title: "Dock", fields: [
             { path: "dock.enabled", label: "Show the dock", kind: "bool", def: true },
+            { path: "dock.all_screens", label: "A dock on every screen", kind: "bool", def: true },
+            { path: "dock.apps", label: "Apps on each dock", kind: "choice", options: ["all", "screen"], def: "all" },
             { path: "dock.hide_windows_taskbar", label: "Hide the Windows taskbar", kind: "bool", def: true },
             { path: "dock.icon_size", label: "Icon size", kind: "slider", min: 28, max: 64, step: 2, def: 40 },
             { path: "dock.zoom", label: "Hover zoom", kind: "slider", min: 1, max: 1.8, step: 0.05, def: 1.3 },

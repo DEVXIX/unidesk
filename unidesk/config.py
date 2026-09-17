@@ -11,6 +11,8 @@ from PySide6.QtCore import QFileSystemWatcher, QObject, QTimer, Signal
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
+from . import layout
+
 CONFIG_DIR = Path(os.environ["UNIDESK_HOME"]) if os.environ.get("UNIDESK_HOME") else Path.home() / ".config" / "unidesk"
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
 DEFAULT_FILE = Path(__file__).parent / "defaults" / "config.yaml"
@@ -53,6 +55,8 @@ class ConfigStore(QObject):
         self._yaml.preserve_quotes = True
         self._yaml.width = 4096
         self.defaults = _plain(self._yaml.load(DEFAULT_FILE.read_text(encoding="utf-8")))
+        # Shown as-is when config.yaml is broken at start-up, so tidy them the same way.
+        self.defaults["widgets"] = _widgets(self.defaults.get("widgets"))
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         if not CONFIG_FILE.exists():
             CONFIG_FILE.write_text(DEFAULT_FILE.read_text(encoding="utf-8"), encoding="utf-8")
@@ -81,12 +85,7 @@ class ConfigStore(QObject):
             return
         self.error = None
         merged = _merge({k: v for k, v in self.defaults.items() if k != "widgets"}, raw)
-        widgets = raw.get("widgets") if isinstance(raw.get("widgets"), list) else []
-        merged["widgets"] = [
-            {**w, "x": _num(w.get("x")), "y": _num(w.get("y")), "scale": _scale(w.get("scale")), "options": w.get("options") or {}}
-            for w in widgets
-            if isinstance(w, dict) and w.get("id") and w.get("type")
-        ]
+        merged["widgets"] = _widgets(raw.get("widgets"))
         self.config = merged
 
     def _reload_if_changed(self):
@@ -124,12 +123,30 @@ class ConfigStore(QObject):
                 return item
         return None
 
-    def place_widget(self, widget_id: str, x: int, y: int, scale: float | None = None):
-        """Position (and size) from edit mode. No change signal: the widget is already there."""
+    @staticmethod
+    def _put_before_x(item, key: str, value, default):
+        """Set screen / anchor, keeping the file tidy: added just before x, and
+        not written at all while it is still the default."""
+        if key in item:
+            item[key] = value
+        elif value != default:
+            keys = list(item.keys())
+            item.insert(keys.index("x") if "x" in keys else len(keys), key, value)
+
+    def place_widget(self, widget_id: str, x: int, y: int, scale: float | None = None,
+                     screen: int | None = None, anchor: str | None = None):
+        """Position (and size) from edit mode. Only a move to another screen
+        signals a change; otherwise the widget is already where it was dropped."""
+        before = next((w for w in self.config["widgets"] if w["id"] == widget_id), None)
+
         def change(doc):
             item = self._find(doc, widget_id)
             if item is None:
                 return False
+            if screen is not None:
+                self._put_before_x(item, "screen", int(screen), 1)
+            if anchor is not None:
+                self._put_before_x(item, "anchor", layout.normalize(anchor), layout.DEFAULT)
             item["x"], item["y"] = int(x), int(y)
             if scale is not None:
                 value = round(float(scale), 2)
@@ -137,7 +154,8 @@ class ConfigStore(QObject):
                     item["scale"] = value
                 elif value != 1:
                     item.insert(list(item.keys()).index("y") + 1, "scale", value)
-        self._edit(change)
+        if self._edit(change) and screen is not None and before is not None and before["screen"] != int(screen):
+            self.changed.emit()
 
     def set_option(self, widget_id: str, key: str, value):
         def change(doc):
@@ -146,6 +164,9 @@ class ConfigStore(QObject):
                 return False
             if key == "scale":
                 item["scale"] = round(float(value), 2)
+                return
+            if key == "screen":
+                self._put_before_x(item, "screen", _screen(value), 1)
                 return
             if not isinstance(item.get("options"), dict):
                 item["options"] = {}
@@ -171,14 +192,19 @@ class ConfigStore(QObject):
         if self._edit(change):
             self.changed.emit()
 
-    def add_widget(self, widget_type: str, x: int, y: int) -> str:
+    def add_widget(self, widget_type: str, x: int, y: int, screen: int = 1, anchor: str = layout.DEFAULT) -> str:
         taken = {w["id"] for w in self.config["widgets"]}
         widget_id, n = widget_type, 2
         while widget_id in taken:
             widget_id, n = f"{widget_type}-{n}", n + 1
 
         def change(doc):
-            doc["widgets"].append({"id": widget_id, "type": widget_type, "x": int(x), "y": int(y), "options": {}})
+            entry = {"id": widget_id, "type": widget_type}
+            if int(screen) != 1:
+                entry["screen"] = int(screen)
+            if layout.normalize(anchor) != layout.DEFAULT:
+                entry["anchor"] = layout.normalize(anchor)
+            doc["widgets"].append({**entry, "x": int(x), "y": int(y), "options": {}})
         if self._edit(change):
             self.changed.emit()
         return widget_id
@@ -193,6 +219,16 @@ class ConfigStore(QObject):
             self.changed.emit()
 
 
+def _widgets(value) -> list[dict]:
+    """Every widget with all its placement keys, whatever the file left out."""
+    return [
+        {**w, "screen": _screen(w.get("screen")), "anchor": layout.normalize(w.get("anchor")),
+         "x": _num(w.get("x")), "y": _num(w.get("y")), "scale": _scale(w.get("scale")), "options": w.get("options") or {}}
+        for w in (value if isinstance(value, list) else [])
+        if isinstance(w, dict) and w.get("id") and w.get("type")
+    ]
+
+
 def _num(value) -> int:
     try:
         return int(round(float(value)))
@@ -205,3 +241,11 @@ def _scale(value) -> float:
         return min(4.0, max(0.25, float(value)))
     except (TypeError, ValueError):
         return 1.0
+
+
+def _screen(value) -> int:
+    """1 = the main display, 2, 3... = the others from left to right."""
+    try:
+        return max(1, int(float(value)))
+    except (TypeError, ValueError):
+        return 1
