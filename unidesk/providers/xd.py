@@ -56,6 +56,7 @@ class XD(QObject):
     messagesChanged = Signal()
     threadChanged = Signal()
     wordleChanged = Signal()
+    sectionChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -71,6 +72,7 @@ class XD(QObject):
         self._thread: list = []
         self._thread_with = ""
         self._wordle: dict = {}
+        self._section: list = []
         # Slow enough to be polite to somebody else's server, quick enough that
         # a message feels like it arrived rather than was fetched.
         self._poll = QTimer(self, interval=20_000, timeout=self.refresh)
@@ -211,6 +213,34 @@ class XD(QObject):
     @Property("QVariantMap", notify=wordleChanged)
     def wordle(self):
         return self._wordle
+
+    @Property("QVariantList", notify=sectionChanged)
+    def section(self):
+        """Whatever the open section holds. One list, because the timeline, the
+        quests and the rooms are all a line of text with a name under it, and
+        one shape means one delegate rather than four that drift apart."""
+        return self._section
+
+    @Slot(str)
+    def loadSection(self, name: str):
+        route = {"tweets": "tweets", "quests": "quests", "rooms": "rooms"}.get(str(name))
+        if not route or not self._token:
+            return
+        self._set_busy(True)
+
+        def run():
+            try:
+                body = get_json(f"{API}/v1/{route}", self._headers())
+            except Exception:
+                body = None
+            QTimer.singleShot(0, lambda: self._set_section(_as_list(body)))
+
+        self._work(run)
+
+    def _set_section(self, items: list):
+        self._set_busy(False)
+        self._section = items
+        self.sectionChanged.emit()
 
     @Slot()
     def refresh(self):

@@ -27,8 +27,7 @@ var types = [
     { type: "quote",    label: "Quote of the day", icon: "format_quote" },
     { type: "dev",      label: "Code reviews & CI", icon: "merge" },
     { type: "devices",  label: "Batteries",     icon: "battery_full" },
-    { type: "xdchat",   label: "xD messages",   icon: "comment" },
-    { type: "xdfeed",   label: "xD notifications", icon: "notifications" }
+    { type: "xd",       label: "xD",            icon: "apps" }
 ];
 
 var tones = ["primary", "secondary", "tertiary", "surface"];
@@ -166,13 +165,9 @@ var fields = {
         { key: "text", label: "Message text", kind: "bool", def: true },
         { key: "width", label: "Width", kind: "slider", min: 280, max: 560, step: 10, def: 360 }
     ],
-    xdchat: [
-        { key: "items", label: "Conversations shown", kind: "slider", min: 2, max: 8, step: 1, def: 5 },
-        { key: "width", label: "Width", kind: "slider", min: 280, max: 520, step: 10, def: 340 }
-    ],
-    xdfeed: [
-        { key: "items", label: "Rows shown", kind: "slider", min: 1, max: 8, step: 1, def: 4 },
-        { key: "width", label: "Width", kind: "slider", min: 260, max: 480, step: 10, def: 320 }
+    xd: [
+        { key: "width", label: "Width", kind: "slider", min: 280, max: 520, step: 10, def: 340 },
+        { key: "height", label: "Height", kind: "slider", min: 280, max: 640, step: 20, def: 400 }
     ]
 };
 

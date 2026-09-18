@@ -20,7 +20,7 @@ Item {
     ,
         mixer: "Mixer", notes: "Notes", timer: "Timer", launcher: "Launcher", games: "Games", league: "League",
         countdown: "Countdown", slideshow: "Slideshow", quote: "Quote", dev: "Dev", devices: "Devices",
-        xdchat: "XdChat", xdfeed: "XdFeed"
+        xd: "Xd"
     })
 
     property bool dragging: false
