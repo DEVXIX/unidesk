@@ -309,7 +309,8 @@ def terminal_theme(c: dict, dark: bool) -> dict:
 
 PALETTE_KEY = r"Software\unidesk\Palette"
 PALETTE_ROLES = ("surfaceContainerLow", "surfaceContainer", "surfaceContainerHigh", "surfaceContainerHighest", "onSurface",
-                 "onSurfaceVariant", "outline", "outlineVariant", "primary", "secondaryContainer", "onSecondaryContainer")
+                 "onSurfaceVariant", "outline", "outlineVariant", "primary", "secondaryContainer", "onSecondaryContainer",
+                 "primaryContainer", "onPrimaryContainer")
 
 
 def _colorref(hex_color: str) -> int:

@@ -107,8 +107,8 @@ class WindowFrames(QObject):
         border = _colorref(c.get("primary" if focused else "outlineVariant", ""))
         if self._mode == "border":
             return None, None, None, border
-        return (1 if self._theme.dark else 0, _colorref(c.get("surfaceContainer", "")),
-                _colorref(c.get("onSurface" if focused else "onSurfaceVariant", "")), border)
+        return (1 if self._theme.dark else 0, _colorref(c.get("primaryContainer", "")),
+                _colorref(c.get("onPrimaryContainer", "")), border)
 
     def _eligible(self, hwnd: int) -> bool:
         if not user32.IsWindowVisible(hwnd):
