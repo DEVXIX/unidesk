@@ -37,7 +37,11 @@ Window {
     // a fullscreen app covers its screen, unless search was opened here.
     property bool ready: false
     visible: ready && cfg.enabled !== false && (!slot.suspended || searchHere)
-    onPillHeightChanged: Dock.reserve(dockWin, pillHeight + bottomGap * 2)
+    // An auto-hiding dock claims no space: reserving it would leave a strip of
+    // empty desktop that a maximised window never covers, which is the opposite
+    // of what hiding is for.
+    readonly property real reservedHeight: autoHide ? 0 : pillHeight + bottomGap * 2
+    onReservedHeightChanged: Dock.reserve(dockWin, reservedHeight)
 
     // Every app, or with "apps: screen" only those with a window on this screen (pins always stay).
     readonly property string monitor: cfg.apps === "screen" ? slot.name : ""
@@ -86,6 +90,48 @@ Window {
     property bool playerOpen: false
     property date now: new Date()
 
+    // ---- auto-hide ---------------------------------------------------------------
+    // Off unless asked for. It is deliberately tied to `slot.suspended` as well:
+    // while a fullscreen app owns this screen the whole window is already hidden,
+    // so there is no trigger strip to brush against and a game cannot be
+    // interrupted by reaching for the bottom of the screen.
+    readonly property bool autoHide: cfg.auto_hide === true && !slot.suspended
+    property bool pointerNear: false
+    // Popups keep it out: a menu must not slide away underneath the pointer.
+    readonly property bool held: menuApp !== null || playerOpen || pickerKey !== "" || searchHere
+    readonly property bool shown: !autoHide || pointerNear || held
+    /** How far it drops: its own height and both gaps, which is past the edge. */
+    readonly property real hiddenDrop: pillHeight + bottomGap * 2
+    /** What is left to brush against. Thin, because it sits over other windows. */
+    readonly property real triggerHeight: 3
+
+    onShownChanged: maskTimer.restart()
+
+    // A short delay before it leaves, so crossing the pill on the way somewhere
+    // else does not make it flap.
+    Timer {
+        id: hideDelay
+        interval: 420
+        onTriggered: dockWin.pointerNear = false
+    }
+    function revealDock() { hideDelay.stop(); dockWin.pointerNear = true; }
+    function unrevealDock() { if (dockWin.autoHide) hideDelay.restart(); }
+
+    // The strip along the very bottom edge. It is inside this window, so it is
+    // masked, suspended and torn down with everything else rather than being a
+    // second always-on-top window of its own.
+    Item {
+        id: trigger
+        visible: dockWin.autoHide
+        x: 0
+        width: dockWin.width
+        height: dockWin.triggerHeight
+        y: dockWin.height - height
+        HoverHandler {
+            onHoveredChanged: hovered ? dockWin.revealDock() : dockWin.unrevealDock()
+        }
+    }
+
     Timer {
         running: dockWin.visible
         repeat: false
@@ -96,6 +142,13 @@ Window {
     // ---- clipping ----------------------------------------------------------------
     function updateMask() {
         var rects = [];
+        // While it is away, the only thing that takes the pointer is the strip
+        // along the bottom edge: everything above it belongs to whatever window
+        // is under the dock, which is the point of hiding it.
+        if (autoHide && !shown) {
+            Desk.setMask(dockWin, [[0, height - triggerHeight, width, triggerHeight]]);
+            return;
+        }
         var top = pill.y - (hovered >= 0 ? iconSize * (zoom - 1) + 44 : 6);
         rects.push([pill.x - 8, top, pill.width + 16, height - top]);
         if (menu.visible) rects.push([menu.x - 20, menu.y - 20, menu.width + 40, menu.height + 40]);
@@ -106,10 +159,10 @@ Window {
     }
     Timer { id: maskTimer; interval: 16; onTriggered: dockWin.updateMask() }
     onHoveredChanged: maskTimer.restart()
-    onVisibleChanged: if (visible) { Dock.registerWindow(dockWin); Dock.reserve(dockWin, pillHeight + bottomGap * 2); maskTimer.restart(); }
+    onVisibleChanged: if (visible) { Dock.registerWindow(dockWin); Dock.reserve(dockWin, reservedHeight); maskTimer.restart(); }
     Component.onCompleted: {
         Dock.registerWindow(dockWin);
-        if (cfg.enabled !== false) Dock.reserve(dockWin, pillHeight + bottomGap * 2);
+        if (cfg.enabled !== false) Dock.reserve(dockWin, reservedHeight);
         updateMask();
         ready = true;
     }
@@ -129,7 +182,23 @@ Window {
         width: content.width + 20
         height: dockWin.pillHeight
         x: Math.round((dockWin.width - width) / 2)
-        y: dockWin.height - height - dockWin.bottomGap
+        // Slides off the bottom of the screen when it is hiding, leaving only
+        // the trigger strip behind; nothing is destroyed, so coming back is a
+        // move rather than a rebuild.
+        y: dockWin.height - height - dockWin.bottomGap + (dockWin.shown ? 0 : dockWin.hiddenDrop)
+        Behavior on y {
+            NumberAnimation {
+                duration: 200 * Theme.animationSpeed
+                easing.type: Easing.OutCubic
+            }
+        }
+        onYChanged: maskTimer.restart()
+
+        // Holds it open once you are on it: leaving the 3px strip must not send
+        // it away again before the pointer has travelled the distance.
+        HoverHandler {
+            onHoveredChanged: hovered ? dockWin.revealDock() : dockWin.unrevealDock()
+        }
         Behavior on width { NumberAnimation { duration: 220 * Theme.animationSpeed; easing.type: Easing.OutCubic } }
         onWidthChanged: maskTimer.restart()
 

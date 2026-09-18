@@ -24,6 +24,7 @@ style:
   animation_speed: 1.0  # 0.5 = snappier, 2 = slower
   scale: 1.0            # size of every widget at once
   window_frames: themed # other apps' windows: themed (title bar, text and border colours) | border | off
+  window_buttons: false # cookie minimize / maximize / close on the ACTIVE window (standard title bars only)
                         # (apps that draw their own title bar, like File Explorer or Terminal, only get the border)
   app_themes: false     # true: also colour VS Code (title bar, menus, tabs, status bar, scroll bars) and
                         # Windows Terminal (title bar, tab row, frame) by writing their settings, and classic
@@ -51,7 +52,8 @@ dock:
   apps: all                    # all | screen (each dock shows the apps with a window on its screen)
   hide_windows_taskbar: true   # make the real taskbar invisible while unidesk runs (restored on quit)
   badges: true                 # unread counts on app icons (read from the Windows taskbar)
-  reserve_space: true          # maximised windows stop above the dock
+  auto_hide: false             # slide the dock away until the pointer reaches the bottom edge
+  reserve_space: true          # maximised windows stop above the dock (ignored while auto_hide is on)
   icon_size: 40
   zoom: 1.3                    # hover zoom (1 = off)
   now_playing: true

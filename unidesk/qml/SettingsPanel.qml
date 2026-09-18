@@ -34,6 +34,7 @@ Card {
             { path: "style.font_roundness", label: "Rounded letters", kind: "slider", min: 0, max: 100, step: 5, def: 60 },
             { path: "style.shadows", label: "Shadows", kind: "bool", def: true },
             { path: "style.window_frames", label: "Other apps' title bars and borders", kind: "choice", options: ["themed", "border", "off"], def: "themed" },
+            { path: "style.window_buttons", label: "Cookie buttons on the active window (Explorer, dialogs, classic apps)", kind: "bool", def: false },
             { path: "style.app_themes", label: "Theme other apps (VS Code, Terminal, classic apps with the Windhawk mod)", kind: "bool", def: false }
         ]},
         { title: "Dock", fields: [
@@ -48,6 +49,7 @@ Card {
             { path: "dock.search", label: "Search box", kind: "bool", def: true },
             { path: "dock.clock_format", label: "Dock clock", kind: "choice", options: ["12h", "24h"], def: "12h" },
             { path: "dock.clock_seconds", label: "Seconds on the clock", kind: "bool", def: false },
+            { path: "dock.auto_hide", label: "Hide the dock until you reach the bottom edge", kind: "bool", def: false },
             { path: "dock.reserve_space", label: "Keep windows above the dock", kind: "bool", def: true }
         ]},
         { title: "Search", fields: [
