@@ -41,6 +41,23 @@ _STORE = Path(os.environ.get("LOCALAPPDATA", ".")) / "unidesk" / "xd-session.jso
 # does not leave the widget saying "Signing in..." until somebody gives up.
 TIMEOUT = 12.0
 
+# The games xD hosts, by the slug its own pages use. There is no endpoint that
+# lists them - /v1/games is a 404, the routes are all /v1/games/<slug>/... - so
+# the list lives here, taken from the website's own pages.
+DAILY_GAMES = [("wordle", "Wordle"), ("sudoku", "Sudoku"), ("crossword", "Crossword"), ("zip", "Zip")]
+ARCADE_GAMES = [
+    ("aqua-grabber", "Aqua Grabber"), ("astro-barrier", "Astro Barrier"),
+    ("balloon-pop", "Balloon Pop"), ("bean-counters", "Bean Counters"),
+    ("cart-surfer", "Cart Surfer"), ("catchin-waves", "Catchin' Waves"),
+    ("dance-contest", "Dance Contest"), ("dj3k", "DJ3K"),
+    ("feed-a-puffle", "Feed a Puffle"), ("fluffy-the-fish", "Fluffy the Fish"),
+    ("hydro-hopper", "Hydro Hopper"), ("ice-fishing", "Ice Fishing"),
+    ("jetpack-adventure", "Jetpack Adventure"), ("pizzatron", "Pizzatron"),
+    ("puffle-launch", "Puffle Launch"), ("puffle-paddle", "Puffle Paddle"),
+    ("puffle-rescue", "Puffle Rescue"), ("puffle-roundup", "Puffle Roundup"),
+    ("puffle-soaker", "Puffle Soaker"),
+]
+
 
 def _read_session() -> dict:
     try:
@@ -55,6 +72,21 @@ def _write_session(data: dict) -> None:
         _STORE.write_text(json.dumps(data), encoding="utf-8")
     except OSError as e:
         print(f"[unidesk] xD: could not save the session: {e}")
+
+
+# Some pictures come back as a full address and some as a path inside the
+# bucket. A relative one handed to Qt is resolved against the QML file and
+# quietly fails to load, so they are all made absolute here.
+MEDIA_BASE = "https://eksde.app/s3/xd-uploads/"
+
+
+def _media(url) -> str:
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    return MEDIA_BASE + text.lstrip("/")
 
 
 def _as_list(value) -> list:
@@ -77,6 +109,22 @@ def _as_count(value) -> int:
             if isinstance(value.get(key), (int, float)):
                 return int(value[key])
     return 0
+
+
+def _with_media(items: list) -> list:
+    """Absolute addresses for anything a tweet will try to draw."""
+    for row in items:
+        if not isinstance(row, dict):
+            continue
+        author = row.get("author")
+        if isinstance(author, dict) and author.get("profile_picture"):
+            author["profile_picture"] = _media(author["profile_picture"])
+        media = row.get("media_urls")
+        if isinstance(media, list):
+            for m in media:
+                if isinstance(m, dict) and m.get("url"):
+                    m["url"] = _media(m["url"])
+    return items
 
 
 class XD(QObject):
@@ -108,6 +156,8 @@ class XD(QObject):
         self._wordle: dict = {}
         self._unread = 0
         self._badge = 0
+        self._me_id = int(session.get('id') or 0)
+        self._avatar = str(session.get('avatar') or '')
         self._result.connect(self._on_result)
         self._poll = QTimer(self, interval=20_000, timeout=self.refresh)
         if self._token:
@@ -178,8 +228,11 @@ class XD(QObject):
             self._forget()
 
         elif kind == "refresh":
+            if data.get("me_id"):
+                self._me_id = int(data["me_id"])
+                self._avatar = str(data.get("avatar") or "")
             if "conversations" in data:
-                self._conversations = data["conversations"]
+                self._conversations = self._conversations_from(data["conversations"])
             if "notifications" in data:
                 self._notifications = data["notifications"]
             if "unread" in data:
@@ -194,7 +247,7 @@ class XD(QObject):
             self.threadChanged.emit()
 
         elif kind == "section":
-            self._section = data.get("items") or []
+            self._section = _with_media(data.get("items") or [])
             self.sectionChanged.emit()
 
         elif kind == "wordle":
@@ -296,6 +349,46 @@ class XD(QObject):
     def wordle(self):
         return self._wordle
 
+    @Property("QVariantList", notify=changed)
+    def games(self):
+        """Every game, daily ones first. Playing one is the website's job - the
+        widget has no browser in it - so each row carries the slug to open."""
+        out = []
+        for slug, name in DAILY_GAMES:
+            out.append({"slug": slug, "name": name, "daily": True})
+        for slug, name in ARCADE_GAMES:
+            out.append({"slug": slug, "name": name, "daily": False})
+        return out
+
+    def _conversations_from(self, messages: list) -> list:
+        """/v1/messages is every message, not a list of chats, so the chats are
+        made here: newest message per person, with their name and picture off
+        the sender or receiver, whichever is not me."""
+        me = self._me_id
+        chats: dict = {}
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            sender, receiver = m.get("sender") or {}, m.get("receiver") or {}
+            other = receiver if (me and m.get("sender_id") == me) else sender
+            if not isinstance(other, dict) or not other.get("username"):
+                continue
+            handle = str(other.get("username"))
+            row = chats.get(handle)
+            when = str(m.get("created_at") or "")
+            if row is None or when > row["at"]:
+                chats[handle] = {
+                    "handle": handle,
+                    "name": str(other.get("display_name") or handle),
+                    "avatar": _media(other.get("profile_picture")),
+                    "last": str(m.get("content") or ("photo" if m.get("media_url") else "")),
+                    "at": when,
+                    "unread": 0,
+                }
+            if not m.get("is_read") and m.get("sender_id") != me:
+                chats[handle]["unread"] = chats[handle].get("unread", 0) + 1
+        return sorted(chats.values(), key=lambda c: c["at"], reverse=True)
+
     @Slot()
     def refresh(self):
         if not self._token:
@@ -304,6 +397,14 @@ class XD(QObject):
 
         def run():
             out: dict = {}
+            if not self._me_id:
+                try:
+                    me = get_json(f"{API}/v1/me", headers, timeout=TIMEOUT)
+                    if isinstance(me, dict):
+                        out["me_id"] = me.get("id")
+                        out["avatar"] = _media(me.get("profile_picture"))
+                except Exception:
+                    pass
             for key, url in (
                 ("conversations", f"{API}/v1/messages"),
                 ("notifications", f"{API}/v1/notifications"),
@@ -363,7 +464,8 @@ class XD(QObject):
 
     @Slot(str)
     def loadSection(self, name: str):
-        route = {"tweets": "tweets", "quests": "quests", "rooms": "rooms"}.get(str(name))
+        # /v1/quests and /v1/games are 404s; only these two answer a plain list.
+        route = {"tweets": "tweets", "rooms": "rooms"}.get(str(name))
         if not route or not self._token:
             return
         self._set_busy(True)

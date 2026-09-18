@@ -26,7 +26,7 @@ Card {
         { key: "messages", label: "Messages", icon: Icons.comment },
         { key: "alerts", label: "Notifications", icon: Icons.notifications },
         { key: "tweets", label: "Timeline", icon: Icons.format_list_bulleted },
-        { key: "quests", label: "Quests", icon: Icons.task_alt },
+        { key: "games", label: "Games", icon: Icons.sports_esports },
         { key: "wordle", label: "Wordle", icon: Icons.emoji_events },
         { key: "rooms", label: "Rooms", icon: Icons.group }
     ]
@@ -45,7 +45,7 @@ Card {
         openWith = "";
         if (key === "messages") XD.refresh();
         else if (key === "wordle") XD.loadWordle();
-        else if (key !== "alerts") XD.loadSection(key);
+        else if (key === "tweets" || key === "rooms") XD.loadSection(key);
     }
     function back() {
         if (openWith !== "") openWith = "";
@@ -179,16 +179,25 @@ Card {
                 width: ListView.view.width
                 height: 50
                 Rectangle { anchors.fill: parent; radius: 12; color: Theme.c.onSurface; opacity: pick.containsMouse ? 0.07 : 0 }
+                Avatar { id: face; url: modelData.avatar; size: 34; anchors { left: parent.left; leftMargin: 8; verticalCenter: parent.verticalCenter } }
                 Column {
-                    anchors { left: parent.left; leftMargin: 10; right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                    anchors { left: face.right; leftMargin: 10; right: dot.left; rightMargin: 8; verticalCenter: parent.verticalCenter }
                     spacing: 2
-                    UText { width: parent.width; text: root.nameOf(modelData) || "someone"; size: 13; weight: Font.Medium; elide: Text.ElideRight }
-                    UText { width: parent.width; text: root.textOf(modelData); size: 11.5; color: Theme.c.onSurfaceVariant; elide: Text.ElideRight }
+                    UText { width: parent.width; text: modelData.name || modelData.handle; size: 13; weight: Font.Medium; elide: Text.ElideRight }
+                    UText { width: parent.width; text: modelData.last; size: 11.5; color: Theme.c.onSurfaceVariant; elide: Text.ElideRight }
+                }
+                Rectangle {
+                    id: dot
+                    anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                    visible: (modelData.unread || 0) > 0
+                    width: 18; height: 18; radius: 9
+                    color: Theme.c.primary
+                    UText { anchors.centerIn: parent; text: modelData.unread; size: 10; weight: Font.Bold; color: Theme.c.onPrimary }
                 }
                 MouseArea {
                     id: pick
                     anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onClicked: { root.openWith = root.nameOf(modelData); XD.openThread(root.openWith); }
+                    onClicked: { root.openWith = modelData.handle; XD.openThread(modelData.handle); }
                 }
             }
         }
@@ -238,7 +247,7 @@ Card {
         // four times. Opening one hands it to the website.
         ListView {
             anchors.fill: parent
-            visible: XD.signedIn && ["alerts", "tweets", "quests", "rooms"].indexOf(root.section) >= 0
+            visible: XD.signedIn && ["alerts", "rooms"].indexOf(root.section) >= 0
             clip: true; spacing: 2
             model: root.section === "alerts" ? XD.notifications : XD.section
             delegate: Item {
@@ -266,30 +275,68 @@ Card {
         }
 
         // ---- wordle ---------------------------------------------------------------
+        // The real board: /wordle/today answers the guesses so far, how long the
+        // word is and whether it is done, so the grid is drawn from that rather
+        // than kept here - reopening the widget shows the game where you left it.
         Column {
             anchors.fill: parent
             visible: XD.signedIn && root.section === "wordle"
             spacing: 10
 
-            UText {
-                width: parent.width
-                text: {
-                    var w = XD.wordle && XD.wordle.stats ? XD.wordle.stats : ({});
-                    var streak = w.current_streak !== undefined ? w.current_streak : (w.streak || 0);
-                    return "Streak " + streak + " · played " + (w.played || w.games_played || 0);
+            readonly property var game: (XD.wordle && XD.wordle.today) ? XD.wordle.today : ({})
+            readonly property int letters: game.word_length || 5
+            readonly property var rows: game.guesses || []
+            readonly property string status: String(game.status || "")
+
+            Column {
+                id: board
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 4
+                Repeater {
+                    model: 6
+                    delegate: Row {
+                        required property int index
+                        readonly property var guess: index < parent.parent.rows.length ? parent.parent.rows[index] : null
+                        spacing: 4
+                        Repeater {
+                            model: parent.parent.parent.letters
+                            delegate: Rectangle {
+                                required property int index
+                                readonly property var g: parent.guess
+                                // a guess is either "word" or {word, result[]}
+                                readonly property string word: g ? String(g.word || g.guess || g) : ""
+                                readonly property var marks: g && g.result ? g.result : null
+                                readonly property string mark: marks && index < marks.length ? String(marks[index]) : ""
+                                width: 30; height: 30; radius: 7
+                                color: !word ? Theme.c.surfaceContainerHighest
+                                     : mark === "correct" || mark === "2" ? Theme.c.primary
+                                     : mark === "present" || mark === "1" ? Theme.c.tertiaryContainer
+                                     : Theme.c.surfaceBright
+                                UText {
+                                    anchors.centerIn: parent
+                                    text: word.length > index ? word.charAt(index).toUpperCase() : ""
+                                    size: 14; weight: Font.Bold
+                                    color: (mark === "correct" || mark === "2") ? Theme.c.onPrimary : Theme.c.onSurface
+                                }
+                            }
+                        }
+                    }
                 }
-                size: 12; color: Theme.c.onSurfaceVariant
             }
+
             Field {
                 id: guessField
                 width: parent.width
-                placeholder: "your guess"
+                visible: parent.status !== "won" && parent.status !== "lost"
+                placeholder: parent.letters + " letters, then Enter"
                 onAccepted: { if (text.trim() !== "") { XD.guess(text); text = ""; } }
             }
             UText {
                 width: parent.width
-                text: "Type a word and press Enter. It is scored on xD."
-                size: 11; color: Theme.c.onSurfaceVariant; wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                text: parent.status === "won" ? "Got it." : parent.status === "lost" ? "Out of guesses." : ""
+                visible: text !== ""
+                size: 12.5; weight: Font.Medium; color: Theme.c.primary
             }
         }
 
@@ -300,6 +347,129 @@ Card {
                      && (root.section === "alerts" ? XD.notifications.length === 0 : XD.section.length === 0)
             text: XD.busy ? "Loading…" : "Nothing here"
             size: 12; color: Theme.c.onSurfaceVariant
+        }
+    }
+
+        // ---- the timeline ---------------------------------------------------------
+        // A tweet is a person and a thing they posted, so it is drawn as one:
+        // their picture and name, the words, and the image if there is one.
+        ListView {
+            anchors.fill: parent
+            visible: XD.signedIn && root.section === "tweets"
+            clip: true; spacing: 8
+            model: XD.section
+            delegate: Item {
+                required property var modelData
+                readonly property var who: modelData.author || ({})
+                readonly property var media: (modelData.media_urls && modelData.media_urls.length > 0)
+                    ? modelData.media_urls[0] : null
+                width: ListView.view.width
+                height: col.implicitHeight + 14
+
+                Rectangle { anchors.fill: parent; radius: 12; color: Theme.c.surfaceContainerHighest; opacity: 0.55 }
+                Avatar {
+                    id: pic
+                    url: who.profile_picture || ""
+                    size: 28
+                    anchors { left: parent.left; leftMargin: 8; top: parent.top; topMargin: 8 }
+                }
+                Column {
+                    id: col
+                    anchors { left: pic.right; leftMargin: 8; right: parent.right; rightMargin: 8; top: parent.top; topMargin: 7 }
+                    spacing: 4
+                    Row {
+                        spacing: 5
+                        UText { text: who.display_name || who.username || "someone"; size: 12.5; weight: Font.Medium }
+                        UText { text: who.username ? "@" + who.username : ""; size: 11.5; color: Theme.c.onSurfaceVariant }
+                    }
+                    UText {
+                        width: col.width
+                        visible: (modelData.content || "") !== ""
+                        text: modelData.content
+                        size: 12; wrapMode: Text.WordWrap
+                        maximumLineCount: 4; elide: Text.ElideRight
+                    }
+                    Image {
+                        visible: media !== null && media.type === "image"
+                        source: media ? media.url : ""
+                        width: col.width
+                        fillMode: Image.PreserveAspectCrop
+                        // capped, so one tall picture cannot push the rest of the
+                        // timeline off the bottom of the widget
+                        height: visible ? Math.min(150, width * 0.62) : 0
+                        asynchronous: true
+                        clip: true
+                    }
+                    Row {
+                        spacing: 12
+                        UText { text: "♥ " + (modelData.likes_count || 0); size: 11; color: Theme.c.onSurfaceVariant }
+                        UText { text: "↺ " + (modelData.retweets_count || 0); size: 11; color: Theme.c.onSurfaceVariant }
+                        UText { text: "✎ " + (modelData.replies_count || 0); size: 11; color: Theme.c.onSurfaceVariant }
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: XD.open("tweet/" + modelData.id)
+                }
+            }
+        }
+
+        // ---- games ----------------------------------------------------------------
+        // The widget has no browser in it, so a game opens on the website. The
+        // daily ones come first because they are the ones with a streak to keep.
+        ListView {
+            anchors.fill: parent
+            visible: XD.signedIn && root.section === "games"
+            clip: true; spacing: 3
+            model: XD.games
+            delegate: Item {
+                required property var modelData
+                width: ListView.view.width
+                height: 38
+                Rectangle { anchors.fill: parent; radius: 10; color: Theme.c.onSurface; opacity: play.containsMouse ? 0.08 : 0 }
+                Row {
+                    anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
+                    spacing: 8
+                    MIcon {
+                        icon: modelData.daily ? Icons.emoji_events : Icons.sports_esports
+                        size: 15
+                        color: modelData.daily ? Theme.c.primary : Theme.c.onSurfaceVariant
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    UText { text: modelData.name; size: 12.5; anchors.verticalCenter: parent.verticalCenter }
+                }
+                MouseArea {
+                    id: play
+                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: XD.open("games/" + modelData.slug)
+                }
+            }
+        }
+
+    // Somebody's picture, or the first letter of their name when they have none.
+    component Avatar: Rectangle {
+        property string url: ""
+        property int size: 32
+        property string fallback: ""
+        width: size; height: size; radius: size / 2
+        color: Theme.c.surfaceBright
+        clip: true
+        UText {
+            anchors.centerIn: parent
+            visible: pic.status !== Image.Ready
+            text: fallback ? fallback.charAt(0).toUpperCase() : "?"
+            size: parent.size * 0.4
+            color: Theme.c.onSurfaceVariant
+        }
+        Image {
+            id: pic
+            anchors.fill: parent
+            source: parent.url
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            visible: status === Image.Ready
+            layer.enabled: true
         }
     }
 
