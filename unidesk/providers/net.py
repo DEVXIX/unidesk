@@ -27,6 +27,17 @@ def get_text(url: str, headers: dict | None = None, timeout: float = 12) -> tupl
         return e.code, ""
 
 
+def get_bytes(url: str, headers: dict | None = None, timeout: float = 12) -> bytes | None:
+    """A picture, or None. Nothing here is worth an exception to a caller that
+    can only draw what it got."""
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_CONTEXT) as res:
+            return res.read()
+    except Exception:
+        return None
+
+
 def get_json(url: str, headers: dict | None = None, timeout: float = 12):
     status, text = get_text(url, {"Accept": "application/json", **(headers or {})}, timeout)
     if status == 404:
