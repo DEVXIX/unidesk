@@ -464,6 +464,32 @@ class Dock(QObject):
     def _find(self, key: str) -> dict | None:
         return next((a for a in self._apps if a["key"] == key), None)
 
+    # ---- jump list -------------------------------------------------------------
+
+    @Slot(str, result="QVariantList")
+    def jumpList(self, key: str) -> list:
+        """What Windows would show on a right-click: the app's own tasks, then
+        the files and folders it opened lately. Empty for an app that publishes
+        neither, which is most of them."""
+        app = self._find(str(key))
+        if not app:
+            return []
+        from .. import jumplist
+
+        try:
+            return jumplist.entries(app.get("exe") or "", app.get("aumid") or "")
+        except Exception as e:  # a missing jump list must never break the menu
+            print(f"[unidesk] jump list for {key}: {e}")
+            return []
+
+    @Slot(str, str)
+    def openJumpItem(self, target: str, args: str):
+        """Run one jump-list row the way Explorer runs it."""
+        from .. import jumplist
+
+        if not jumplist.open_entry(str(target), str(args)):
+            print(f"[unidesk] could not open {target} {args}")
+
     # ---- status (language, network) --------------------------------------------
 
     def _update_status(self):

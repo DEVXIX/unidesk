@@ -71,6 +71,10 @@ Window {
 
     property int hovered: -1
     property var menuApp: null
+    // read once when the menu opens: it goes to the shell and to disk, so it is
+    // not something to re-evaluate on every repaint
+    property var jumpRows: []
+    onMenuAppChanged: jumpRows = menuApp ? Dock.jumpList(menuApp.key) : []
     property string pickerKey: ""
     property real pickerX: 0
     readonly property var pickerApp: {
@@ -668,6 +672,21 @@ Window {
                 }
             }
             Rectangle { width: parent.width; height: 1; color: Theme.c.outlineVariant; visible: dockWin.menuApp && dockWin.menuApp.windows.length > 0 }
+
+            // What the app itself offers: its tasks, and the things it opened
+            // lately. Fetched when the menu opens, because reading it touches
+            // the shell and a few files on disk.
+            Repeater {
+                model: dockWin.jumpRows
+                MenuRow {
+                    required property var modelData
+                    icon: modelData.kind === "task" ? Icons.add : Icons.schedule
+                    text: modelData.title
+                    subtext: modelData.subtitle
+                    onClicked: { Dock.openJumpItem(modelData.target, modelData.args); dockWin.menuApp = null; }
+                }
+            }
+            Rectangle { width: parent.width; height: 1; color: Theme.c.outlineVariant; visible: dockWin.jumpRows.length > 0 }
             MenuRow {
                 icon: Icons.add
                 text: dockWin.menuApp && dockWin.menuApp.running ? "New window" : "Open"
@@ -692,16 +711,31 @@ Window {
         id: mrow
         property string icon: ""
         property string text: ""
+        property string subtext: ""
         property bool danger: false
         signal clicked()
+        readonly property bool twoLine: subtext !== ""
         width: parent ? parent.width : 200
-        height: visible ? 40 : 0
+        height: visible ? (twoLine ? 48 : 40) : 0
         Rectangle { anchors.fill: parent; radius: 12; color: Theme.c.onSurface; opacity: mrowMouse.containsMouse ? 0.08 : 0 }
         Row {
             anchors.verticalCenter: parent.verticalCenter
             x: 12; spacing: 12
             MIcon { icon: mrow.icon; size: 18; color: mrow.danger ? Theme.c.error : Theme.c.onSurfaceVariant; anchors.verticalCenter: parent.verticalCenter }
-            UText { width: mrow.width - 56; text: mrow.text; size: 13.5; color: mrow.danger ? Theme.c.error : Theme.c.onSurface; anchors.verticalCenter: parent.verticalCenter }
+            Column {
+                width: mrow.width - 56
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 1
+                UText { width: parent.width; text: mrow.text; size: 13.5; elide: Text.ElideRight; color: mrow.danger ? Theme.c.error : Theme.c.onSurface }
+                UText {
+                    width: parent.width
+                    visible: mrow.twoLine
+                    text: mrow.subtext
+                    size: 11.5
+                    elide: Text.ElideMiddle
+                    color: Theme.c.onSurfaceVariant
+                }
+            }
         }
         MouseArea { id: mrowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: mrow.clicked() }
     }
