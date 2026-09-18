@@ -58,6 +58,11 @@ Write-Output 'ok'
 """
 
 
+# How long the desk gets to finish loading before its first picture is taken.
+# Weather and the code-activity widget are the slow ones.
+FIRST_PAINT_MS = 45_000
+
+
 def _home() -> Path:
     return Path(os.environ.get("LOCALAPPDATA", ".")) / "unidesk"
 
@@ -65,9 +70,11 @@ def _home() -> Path:
 class LockScreen(QObject):
     """style/lock_screen: repaint the Windows lock screen from the desk."""
 
-    def __init__(self, store, displays, wallpaper: Path):
+    def __init__(self, store, displays, wallpaper: Path, desk=None):
         super().__init__()
         self._store, self._displays, self._wallpaper = store, displays, wallpaper
+        # The desk is asked to drop a few widgets for one frame; see Desk.lockShot.
+        self._desk = desk
         self._enabled = False
         self._minutes = 0
         # Long by default: each pass grabs every widget and asks Windows to take
@@ -91,8 +98,12 @@ class LockScreen(QObject):
             return
         self._timer.setInterval(minutes * 60_000)
         self._timer.start()
-        # Once now, so turning it on shows something without waiting a interval.
-        QTimer.singleShot(1500, self.refresh)
+        # Not straight away. Widgets that fetch something - the weather, code
+        # activity - are still saying "checking the sky..." seconds after the
+        # desk appears, and a picture taken then puts that on the lock screen
+        # until the next one is due. The first paint waits for them to settle;
+        # every one after it happens on a desk that has been up for a while.
+        QTimer.singleShot(FIRST_PAINT_MS, self.refresh)
 
     # ---- painting ----------------------------------------------------------------
 
@@ -139,7 +150,20 @@ class LockScreen(QObject):
                 rect.height(),
             )
             painter.drawImage(QPoint(0, 0), scaled, crop)
-        widgets = slot.desk_window.grabWindow()
+        # Hide what does not belong on a lock screen, let the scene repaint, and
+        # put it back whatever happens - a desk left missing its clock because a
+        # grab threw would be a far worse bug than a lock screen with one on it.
+        from PySide6.QtWidgets import QApplication
+
+        if self._desk is not None:
+            self._desk.set_lock_shot(True)
+            QApplication.processEvents()
+        try:
+            widgets = slot.desk_window.grabWindow()
+        finally:
+            if self._desk is not None:
+                self._desk.set_lock_shot(False)
+                QApplication.processEvents()
         if not widgets.isNull():
             painter.drawImage(slot.area.topLeft() - rect.topLeft(), widgets)
         painter.end()

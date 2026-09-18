@@ -100,6 +100,7 @@ class Desk(QObject):
     errorChanged = Signal()
     selectedChanged = Signal()
     screensChanged = Signal()
+    lockShotChanged = Signal()
 
     def __init__(self, app: QApplication, store: ConfigStore, theme: Theme, displays: Displays, providers: dict[str, QObject]):
         super().__init__()
@@ -109,6 +110,7 @@ class Desk(QObject):
         self._displays = displays
         self._providers = providers
         self._editing = False
+        self._lock_shot = False
         self._suspended = False
         self._selected = ""
         self._needed: set[str] = set()
@@ -226,6 +228,29 @@ class Desk(QObject):
     @Property(bool, notify=editingChanged)
     def editing(self):
         return self._editing
+
+    @Property(bool, notify=lockShotChanged)
+    def lockShot(self):
+        """True only while the lock screen picture is being painted.
+
+        Windows draws its own clock and date on the lock screen, so ours would
+        sit beside it showing the time the picture was taken. Widgets whose type
+        is listed under lock_screen.hide leave the picture while this is on, and
+        come straight back: it is one frame, and nothing about the desk changes.
+        """
+        return self._lock_shot
+
+    def set_lock_shot(self, on: bool):
+        if on != self._lock_shot:
+            self._lock_shot = on
+            self.lockShotChanged.emit()
+
+    @Property("QVariantList", notify=lockShotChanged)
+    def lockHidden(self):
+        """Widget types kept out of the lock screen picture."""
+        section = self._store.config.get("lock_screen") or {}
+        hide = section.get("hide")
+        return [str(t) for t in hide] if isinstance(hide, list) else ["clock", "time"]
 
     @Property(bool, notify=suspendedChanged)
     def suspended(self):
@@ -579,7 +604,7 @@ def main():
     frames = WindowFrames(store, theme)
     app_themes = AppThemes(store, theme)
     caption = CaptionButtons(store, theme)
-    lock_screen = LockScreen(store, displays, WALLPAPER)
+    lock_screen = LockScreen(store, displays, WALLPAPER, desk)
 
     dock = Dock(store)
     desk.dock_provider = dock

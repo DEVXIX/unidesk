@@ -72,8 +72,15 @@ Item {
     onWidthChanged: geometryMoved()
     onHeightChanged: geometryMoved()
 
+    // Left out of the lock screen picture: Windows draws its own clock there,
+    // so ours would only be a second one showing when the picture was painted.
+    // It is one frame, and the widget is back before anybody sees the desk.
+    readonly property bool hiddenOnLock:
+        Desk.lockShot && Desk.lockHidden.indexOf(String(frame.spec.type)) >= 0
+
     Item {
         id: content
+        visible: !frame.hiddenOnLock
         width: frame.baseWidth
         height: frame.baseHeight
         transform: Scale { xScale: frame.widgetScale; yScale: frame.widgetScale }
