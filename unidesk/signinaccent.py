@@ -61,6 +61,12 @@ class SignInAccent(QObject):
         # this is the state of things for good, and a line about it in the log
         # every time the wallpaper shifts is just noise.
         self._warned = ""
+        # Tried again now and then, because the thing most likely to be
+        # standing in the way - the one-off grant in
+        # tools/allow-signin-accent.ps1 - is usually given while unidesk is
+        # already running, and nothing about giving it tells the desk. Without
+        # this the colour waits for the next wallpaper change or restart.
+        self._retry = QTimer(self, singleShot=False, interval=180_000, timeout=self.apply)
         store.changed.connect(self.configure)
         theme.colorsChanged.connect(self.apply)
         self.configure()
@@ -74,7 +80,9 @@ class SignInAccent(QObject):
         if want == self._enabled:
             return
         self._enabled = want
+        self._retry.stop()
         if want:
+            self._retry.start()
             QTimer.singleShot(8_000, self.apply)
 
     def _color(self) -> QColor:
