@@ -34,15 +34,44 @@ if (-not (Test-Path -LiteralPath $dir)) {
 }
 
 if ($Revoke) {
-    & icacls $dir /remove:g $owner | Out-Null
+    & icacls $dir /remove:g $owner /t | Out-Null
     "revoked: $owner no longer writes $dir"
     return
 }
 
-# (OI)(CI) so the files inside inherit it; M is Modify, which is read, write
-# and delete on those files and nothing beyond this folder.
-& icacls $dir /grant "${owner}:(OI)(CI)M" | Out-Null
-if ($LASTEXITCODE) { throw "icacls refused: exit $LASTEXITCODE" }
+# Why this needs more than one icacls: the folder's ACL holds SYSTEM and the
+# built-in Administrator ACCOUNT - not the Administrators group. An elevated
+# session running as any other account is therefore not on the list at all, and
+# rewriting an ACL needs a right the list does not give it. icacls answers
+# "Access is denied", exit 5, however elevated the shell is.
+#
+# So ownership is taken first (an administrator may always do that, which is
+# what stops a locked-out folder being unrecoverable), the grant is written,
+# and ownership is handed straight back to SYSTEM. What is left behind is the
+# folder exactly as it was plus one entry: this account, Modify, here only.
+$owned = $false
+& icacls $dir /grant "${owner}:(OI)(CI)M" /t | Out-Null
+if ($LASTEXITCODE) {
+    "the folder will not take a grant from this account; taking ownership first"
+    # /a gives it to Administrators rather than to whoever is running this, so
+    # the machine is not left depending on one account.
+    & takeown /f $dir /a /r /d Y | Out-Null
+    if ($LASTEXITCODE) { throw "could not take ownership of $dir (exit $LASTEXITCODE)" }
+    $owned = $true
+    & icacls $dir /grant "${owner}:(OI)(CI)M" /t | Out-Null
+    if ($LASTEXITCODE) { throw "icacls still refused after taking ownership: exit $LASTEXITCODE" }
+}
+
+if ($owned) {
+    # Back to stock. The grant above survives this: an entry on the list does
+    # not depend on who owns the folder.
+    & icacls $dir /setowner "NT AUTHORITY\SYSTEM" /t | Out-Null
+    if ($LASTEXITCODE) {
+        "note: the grant is in place, but ownership stayed with Administrators"
+    } else {
+        "ownership handed back to SYSTEM"
+    }
+}
 
 "granted: $owner may now replace its own sign-in picture"
 "folder:  $dir"

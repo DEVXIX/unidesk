@@ -128,7 +128,6 @@ class AccountPicture(QObject):
         self._enabled = False
         self._avatar: QImage | None = None
         self._avatar_for = ""
-        self._targets_cache: dict[int, Path] | None = None
         self._minutes = 0
         # Redrawn on a timer rather than on a lock, because there is no moment
         # to hook: the sign-in screen reads the file when it draws, and whatever
@@ -240,9 +239,12 @@ class AccountPicture(QObject):
     # ---- where Windows keeps it --------------------------------------------------
 
     def targets(self) -> dict[int, Path]:
-        """The files the registry points at, by size. Read once per run."""
-        if self._targets_cache is not None:
-            return self._targets_cache
+        """The files the registry points at, by size.
+
+        Read every time rather than cached: setting any picture in Settings
+        rewrites these paths with a fresh GUID, and a cache that outlived that
+        would have unidesk writing files nothing reads any more.
+        """
         found: dict[int, Path] = {}
         script = (
             "$sid = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value;"
@@ -261,8 +263,7 @@ class AccountPicture(QObject):
             )
         except Exception as e:
             print(f"[unidesk] sign-in picture: could not read where Windows keeps it: {e}")
-            self._targets_cache = {}
-            return self._targets_cache
+            return found
         for line in (result.stdout or "").splitlines():
             name, _, value = line.strip().partition("=")
             if not name.startswith("Image") or not value:
@@ -271,7 +272,6 @@ class AccountPicture(QObject):
                 found[int(name[len("Image"):])] = Path(value)
             except ValueError:
                 continue
-        self._targets_cache = found
         return found
 
     @Slot()
