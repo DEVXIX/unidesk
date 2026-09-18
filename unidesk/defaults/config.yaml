@@ -79,6 +79,13 @@ lock_screen:
     github: ""          # whose avatar: https://github.com/<name>.png
     shape: random       # or cookie, cookie12, flower, star, burst, clover, pentagon, circle
     every_minutes: 10   # a new shape each time it is redrawn
+  # The "Sign in" button and focus rings are drawn in the accent colour of the
+  # profile the sign-in screen runs as, which is not yours - hence the stock
+  # blue. This puts the desk's colour there instead. Needs
+  # tools/allow-signin-accent.ps1 run once as administrator.
+  sign_in_accent:
+    enabled: false
+    color: ""          # blank follows the theme, or force one like "#3e5373"
 
 # Search (the dock's search box, or the hotkey): apps, maths, settings, web.
 search:

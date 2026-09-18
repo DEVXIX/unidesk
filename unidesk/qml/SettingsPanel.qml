@@ -41,7 +41,9 @@ Card {
             { path: "lock_screen.account_picture.enabled", label: "Draw your sign-in picture too (needs tools\allow-signin-picture.ps1 once, as administrator)", kind: "bool", def: false },
             { path: "lock_screen.account_picture.github", label: "GitHub account whose avatar to use", kind: "text", def: "" },
             { path: "lock_screen.account_picture.shape", label: "Shape of the sign-in picture", kind: "choice", options: ["random", "cookie", "cookie12", "flower", "star", "burst", "clover", "pentagon", "circle"], def: "random" },
-            { path: "lock_screen.account_picture.every_minutes", label: "Redraw the sign-in picture every (minutes)", kind: "slider", min: 1, max: 120, step: 1, def: 10 }
+            { path: "lock_screen.account_picture.every_minutes", label: "Redraw the sign-in picture every (minutes)", kind: "slider", min: 1, max: 120, step: 1, def: 10 },
+            { path: "lock_screen.sign_in_accent.enabled", label: "Colour the sign-in screen like the desk (needs tools\allow-signin-accent.ps1 once, as administrator)", kind: "bool", def: false },
+            { path: "lock_screen.sign_in_accent.color", label: "Sign-in accent (blank follows the theme)", kind: "text", def: "" }
         ]},
         { title: "Dock", fields: [
             { path: "dock.enabled", label: "Show the dock", kind: "bool", def: true },

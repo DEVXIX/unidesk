@@ -31,6 +31,7 @@ from .dock.provider import Dock
 from .captionbuttons import CaptionButtons
 from .accountpicture import AccountPicture
 from .lockscreen import LockScreen
+from .signinaccent import SignInAccent
 from .frames import WindowFrames
 from .search import Search
 from .updater import Updater
@@ -610,6 +611,7 @@ def main():
     caption = CaptionButtons(store, theme)
     lock_screen = LockScreen(store, displays, WALLPAPER, desk)
     account_picture = AccountPicture(store, theme, WALLPAPER)
+    sign_in_accent = SignInAccent(store, theme)
 
     dock = Dock(store)
     desk.dock_provider = dock
