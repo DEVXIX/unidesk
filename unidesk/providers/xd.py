@@ -144,6 +144,7 @@ class XD(QObject):
     sectionChanged = Signal()
     # Raised once a tweet is actually on the timeline, so the box can clear.
     posted = Signal()
+    tweetChanged = Signal()
     # Worker thread -> here. Qt makes this a queued connection across threads,
     # which is the whole point: nothing below touches state off the GUI thread.
     _result = Signal(str, "QVariant")
@@ -161,6 +162,9 @@ class XD(QObject):
         self._thread: list = []
         self._thread_with = ""
         self._open_section = ""
+        self._tweet: dict = {}
+        self._replies: list = []
+        self._open_tweet = 0
         self._wordle: dict = {}
         self._unread = 0
         self._badge = 0
@@ -269,6 +273,14 @@ class XD(QObject):
         elif kind == "section":
             self._section = _with_media(data.get("items") or [])
             self.sectionChanged.emit()
+
+        elif kind == "tweet":
+            one = data.get("tweet") or {}
+            self._tweet = _with_media([one])[0] if one else {}
+            self._replies = _with_media(data.get("replies") or [])
+            self.tweetChanged.emit()
+            if data.get("replied"):
+                self.posted.emit()
 
         elif kind == "posted":
             self._section = _with_media(data.get("items") or [])
@@ -516,6 +528,100 @@ class XD(QObject):
             except Exception:
                 body = None
             self._result.emit("thread", {"items": _as_list(body)})
+
+        self._work(run)
+
+    # ---- one tweet, opened ---------------------------------------------------------
+
+    @Property("QVariant", notify=tweetChanged)
+    def tweet(self):
+        return self._tweet
+
+    @Property("QVariant", notify=tweetChanged)
+    def replies(self):
+        return self._replies
+
+    def _tweet_now(self, headers: dict, tid: int) -> dict:
+        """A tweet and what people said back, fetched together."""
+        one = replies = None
+        try:
+            one = get_json(f"{API}/v1/tweets/{tid}", headers, timeout=TIMEOUT)
+        except Exception:
+            pass
+        try:
+            replies = get_json(f"{API}/v1/tweets/{tid}/replies", headers, timeout=TIMEOUT)
+        except Exception:
+            pass
+        return {"tweet": one if isinstance(one, dict) else {}, "replies": _as_list(replies)}
+
+    @Slot(int)
+    def openTweet(self, tid: int):
+        """Read one here rather than handing it to a browser."""
+        tid = int(tid or 0)
+        if not tid or not self._token:
+            return
+        self._open_tweet = tid
+        self._tweet, self._replies = {}, []
+        self.tweetChanged.emit()
+        self._set_busy(True)
+        headers = self._headers()
+        self._work(lambda: self._result.emit("tweet", self._tweet_now(headers, tid)))
+
+    @Slot()
+    def closeTweet(self):
+        self._open_tweet = 0
+
+    @Slot(int, bool)
+    def like(self, tid: int, on: bool):
+        tid = int(tid or 0)
+        if not tid or not self._token:
+            return
+        headers = self._headers()
+        # The count moves now; the server is only asked to agree. A like that
+        # waits for a round trip feels broken even when it works.
+        self._patch_like(tid, on)
+
+        def run():
+            method = "POST" if on else "DELETE"
+            try:
+                send_json(f"{API}/v1/tweets/{tid}/like", None, headers, method=method, timeout=TIMEOUT)
+            except Exception:
+                pass
+            if self._open_tweet == tid:
+                self._result.emit("tweet", self._tweet_now(headers, tid))
+
+        self._work(run)
+
+    def _patch_like(self, tid: int, on: bool):
+        """Move one tweet's heart wherever it is being shown."""
+        for row in ([self._tweet] if self._tweet else []) + list(self._section) + list(self._replies):
+            if isinstance(row, dict) and row.get("id") == tid and bool(row.get("is_liked_by_me")) != on:
+                row["is_liked_by_me"] = on
+                row["likes_count"] = max(0, int(row.get("likes_count") or 0) + (1 if on else -1))
+        self.sectionChanged.emit()
+        self.tweetChanged.emit()
+
+    @Slot(int, str)
+    def reply(self, tid: int, text: str):
+        tid, text = int(tid or 0), str(text).strip()
+        if not tid or not text or not self._token:
+            return
+        self._set_busy(True)
+        headers = self._headers()
+
+        def run():
+            try:
+                status, body = send_json(
+                    f"{API}/v1/tweets/{tid}/reply", {"content": text}, headers, timeout=TIMEOUT
+                )
+            except Exception as e:
+                self._result.emit("error", {"message": f"xD would not take that: {e}"})
+                return
+            if status >= 400:
+                said = body.get("message") if isinstance(body, dict) else None
+                self._result.emit("error", {"message": str(said or f"xD said no ({status}).")})
+                return
+            self._result.emit("tweet", dict(self._tweet_now(headers, tid), replied=True))
 
         self._work(run)
 

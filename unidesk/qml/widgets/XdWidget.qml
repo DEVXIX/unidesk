@@ -24,6 +24,9 @@ Card {
     // The picture being looked at, "" for none. It covers the whole widget
     // rather than opening a window: a widget that spawns windows is a program.
     property string viewing: ""
+    // The tweet being read, 0 for none. Opening one used to hand it to a
+    // browser, which is a strange thing for a desktop widget to do.
+    property int openTweetId: 0
 
     readonly property var sections: [
         { key: "messages", label: "Messages", icon: Icons.comment },
@@ -54,8 +57,19 @@ Card {
     }
     function back() {
         // Leaving something also stops the poll keeping it up to date.
-        if (openWith !== "") { openWith = ""; XD.closeThread(); }
+        if (openTweetId !== 0) { openTweetId = 0; XD.closeTweet(); }
+        else if (openWith !== "") { openWith = ""; XD.closeThread(); }
         else { section = ""; XD.viewing(""); }
+    }
+    function readTweet(id) { openTweetId = id; XD.openTweet(id); }
+    function whenOf(row) {
+        var raw = row && (row.created_at || row.sort_time);
+        if (!raw) return "";
+        var mins = Math.max(0, Math.round((Date.now() - new Date(raw).getTime()) / 60000));
+        if (mins < 1) return "now";
+        if (mins < 60) return mins + "m";
+        if (mins < 1440) return Math.round(mins / 60) + "h";
+        return Math.round(mins / 1440) + "d";
     }
 
     // ---- header ---------------------------------------------------------------
@@ -67,20 +81,22 @@ Card {
         MIcon {
             id: lead
             anchors.verticalCenter: parent.verticalCenter
-            icon: (root.section === "" && root.openWith === "") ? Icons.apps : Icons.chevron_right
-            rotation: (root.section === "" && root.openWith === "") ? 0 : 180
+            readonly property bool atRoot: root.section === "" && root.openWith === "" && root.openTweetId === 0
+            icon: atRoot ? Icons.apps : Icons.chevron_right
+            rotation: atRoot ? 0 : 180
             size: 18
             color: Theme.c.primary
             MouseArea {
                 anchors.fill: parent; anchors.margins: -8
                 cursorShape: Qt.PointingHandCursor
-                enabled: root.section !== "" || root.openWith !== ""
+                enabled: !lead.atRoot
                 onClicked: root.back()
             }
         }
         UText {
             anchors { left: lead.right; leftMargin: 8; verticalCenter: parent.verticalCenter }
-            text: root.openWith !== "" ? "@" + root.openWith
+            text: root.openTweetId !== 0 ? "Tweet"
+                : root.openWith !== "" ? "@" + root.openWith
                 : root.section === "" ? "xD" : root.labelOf(root.section)
             size: 15; weight: Font.Medium
         }
@@ -354,7 +370,6 @@ Card {
             text: XD.busy ? "Loading…" : "Nothing here"
             size: 12; color: Theme.c.onSurfaceVariant
         }
-    }
 
         // ---- the timeline ---------------------------------------------------------
         // A tweet is a person and a thing they posted, so it is drawn as one:
@@ -364,8 +379,9 @@ Card {
                 top: parent.top; left: parent.left; right: parent.right
                 bottom: tweetBox.top; bottomMargin: 8
             }
-            visible: XD.signedIn && root.section === "tweets"
+            visible: XD.signedIn && root.section === "tweets" && root.openTweetId === 0
             clip: true; spacing: 8
+            id: timeline
             model: XD.section
             delegate: Item {
                 required property var modelData
@@ -421,8 +437,9 @@ Card {
                 }
                 MouseArea {
                     anchors.fill: parent
+                    z: -1   // the picture and the heart get first refusal
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: XD.open("tweet/" + modelData.id)
+                    onClicked: root.readTweet(modelData.id)
                 }
             }
         }
@@ -433,7 +450,7 @@ Card {
         Item {
             id: tweetBox
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            visible: XD.signedIn && root.section === "tweets"
+            visible: XD.signedIn && root.section === "tweets" && root.openTweetId === 0
             height: visible ? 34 : 0
 
             Field {
@@ -469,6 +486,167 @@ Card {
             }
         }
 
+        // ---- one tweet, read here --------------------------------------------------
+        // The whole thing rather than four lines of it: every picture, what
+        // people said back, and a box to say something yourself. Opening a
+        // browser for this was the widget admitting it could not do the job.
+        Item {
+            id: reader
+            anchors.fill: parent
+            visible: XD.signedIn && root.openTweetId !== 0
+
+            ListView {
+                anchors {
+                    top: parent.top; left: parent.left; right: parent.right
+                    bottom: replyBox.top; bottomMargin: 8
+                }
+                clip: true; spacing: 8
+                model: XD.replies
+
+                header: Column {
+                    id: full
+                    width: ListView.view.width
+                    spacing: 7
+                    bottomPadding: 6
+
+                    readonly property var t: XD.tweet || ({})
+                    readonly property var who: t.author || ({})
+
+                    Row {
+                        spacing: 8
+                        Avatar { url: full.who.profile_picture || ""; size: 34 }
+                        Column {
+                            spacing: 1
+                            UText {
+                                text: full.who.display_name || full.who.username || "someone"
+                                size: 13.5; weight: Font.Medium
+                            }
+                            UText {
+                                text: (full.who.username ? "@" + full.who.username : "")
+                                    + (root.whenOf(full.t) ? " · " + root.whenOf(full.t) : "")
+                                size: 11.5; color: Theme.c.onSurfaceVariant
+                            }
+                        }
+                    }
+                    UText {
+                        width: parent.width
+                        visible: (full.t.content || "") !== ""
+                        text: full.t.content || ""
+                        size: 13; wrapMode: Text.WordWrap
+                    }
+                    // Every picture on it, not just the first.
+                    Repeater {
+                        model: full.t.media_urls || []
+                        ShapedImage {
+                            required property var modelData
+                            visible: modelData && modelData.type === "image"
+                            source: visible ? modelData.url : ""
+                            width: reader.width
+                            height: visible ? Math.round(width * 0.52) : 0
+                            radius: 12
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.viewing = modelData.url
+                            }
+                        }
+                    }
+                    Row {
+                        spacing: 14
+                        // A Row cannot hold a fill-anchored child, so the heart
+                        // and its count sit in an Item that the tap area can fill.
+                        Item {
+                            width: heart.implicitWidth; height: heart.implicitHeight
+                            Row {
+                                id: heart
+                                spacing: 4
+                                UText {
+                                    text: "♥"; size: 13
+                                    color: full.t.is_liked_by_me ? Theme.c.error : Theme.c.onSurfaceVariant
+                                }
+                                UText {
+                                    text: full.t.likes_count || 0
+                                    size: 12; color: Theme.c.onSurfaceVariant
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent; anchors.margins: -6
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: XD.like(root.openTweetId, !full.t.is_liked_by_me)
+                            }
+                        }
+                        UText {
+                            text: "↺ " + (full.t.retweets_count || 0)
+                            size: 12; color: Theme.c.onSurfaceVariant
+                        }
+                        UText {
+                            text: "✎ " + (full.t.replies_count || 0)
+                            size: 12; color: Theme.c.onSurfaceVariant
+                        }
+                    }
+                    Rectangle { width: parent.width; height: 1; color: Theme.c.outlineVariant; opacity: 0.5 }
+                    UText {
+                        visible: XD.replies.length === 0
+                        text: XD.busy ? "Loading…" : "No replies yet"
+                        size: 12; color: Theme.c.onSurfaceVariant
+                    }
+                }
+
+                delegate: Item {
+                    id: replyRow
+                    required property var modelData
+                    readonly property var who: modelData.author || ({})
+                    width: ListView.view.width
+                    height: rcol.implicitHeight + 12
+
+                    Rectangle { anchors.fill: parent; radius: 10; color: Theme.c.surfaceContainerHighest; opacity: 0.45 }
+                    Avatar {
+                        id: rpic
+                        url: replyRow.who.profile_picture || ""
+                        size: 22
+                        anchors { left: parent.left; leftMargin: 7; top: parent.top; topMargin: 7 }
+                    }
+                    Column {
+                        id: rcol
+                        anchors { left: rpic.right; leftMargin: 7; right: parent.right; rightMargin: 7; top: parent.top; topMargin: 6 }
+                        spacing: 2
+                        Row {
+                            spacing: 5
+                            UText {
+                                text: replyRow.who.display_name || replyRow.who.username || "someone"
+                                size: 12; weight: Font.Medium
+                            }
+                            UText {
+                                text: replyRow.who.username ? "@" + replyRow.who.username : ""
+                                size: 11; color: Theme.c.onSurfaceVariant
+                            }
+                        }
+                        UText {
+                            width: rcol.width
+                            text: replyRow.modelData.content || ""
+                            size: 12; wrapMode: Text.WordWrap
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.readTweet(modelData.id)
+                    }
+                }
+            }
+
+            Field {
+                id: replyBox
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                placeholder: "Reply"
+                onAccepted: XD.reply(root.openTweetId, text)
+                Connections {
+                    target: XD
+                    function onPosted() { replyBox.text = ""; }
+                }
+            }
+        }
+
         // ---- games ----------------------------------------------------------------
         // The widget has no browser in it, so a game opens on the website. The
         // daily ones come first because they are the ones with a streak to keep.
@@ -500,6 +678,8 @@ Card {
                 }
             }
         }
+
+    }
 
     // ---- looking at a picture ----------------------------------------------------
     Rectangle {
