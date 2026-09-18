@@ -35,7 +35,9 @@ Card {
             { path: "style.shadows", label: "Shadows", kind: "bool", def: true },
             { path: "style.window_frames", label: "Other apps' title bars and borders", kind: "choice", options: ["themed", "border", "off"], def: "themed" },
             { path: "style.window_buttons", label: "Cookie buttons on the active window (Explorer, dialogs, classic apps)", kind: "bool", def: false },
-            { path: "style.app_themes", label: "Theme other apps (VS Code, Terminal, classic apps with the Windhawk mod)", kind: "bool", def: false }
+            { path: "style.app_themes", label: "Theme other apps (VS Code, Terminal, classic apps with the Windhawk mod)", kind: "bool", def: false },
+            { path: "lock_screen.enabled", label: "Put your desk on the Windows lock screen (a picture of it, repainted now and then)", kind: "bool", def: false },
+            { path: "lock_screen.every_minutes", label: "Repaint the lock screen every (minutes)", kind: "slider", min: 1, max: 60, step: 1, def: 10 }
         ]},
         { title: "Dock", fields: [
             { path: "dock.enabled", label: "Show the dock", kind: "bool", def: true },

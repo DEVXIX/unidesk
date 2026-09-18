@@ -62,6 +62,15 @@ dock:
   clock_seconds: false
   # pinned: filled in on first run from your taskbar pins and open apps
 
+# Your desk on the Windows lock screen. Windows will not let any program draw
+# there - it is a separate secure desktop - so unidesk paints a picture of the
+# wallpaper with your widgets on it and hands Windows that. It is therefore a
+# photograph: whatever it shows was true when it was painted. Weather, the date
+# and the song that was playing survive that; a clock counting seconds will not.
+lock_screen:
+  enabled: false
+  every_minutes: 10   # how often it is repainted while you are signed in
+
 # Search (the dock's search box, or the hotkey): apps, maths, settings, web.
 search:
   enabled: true           # false = the search box opens Windows search instead

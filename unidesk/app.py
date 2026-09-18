@@ -29,6 +29,7 @@ from .config import CONFIG_DIR, CONFIG_FILE, ConfigStore
 from .displays import Displays
 from .dock.provider import Dock
 from .captionbuttons import CaptionButtons
+from .lockscreen import LockScreen
 from .frames import WindowFrames
 from .search import Search
 from .updater import Updater
@@ -578,6 +579,7 @@ def main():
     frames = WindowFrames(store, theme)
     app_themes = AppThemes(store, theme)
     caption = CaptionButtons(store, theme)
+    lock_screen = LockScreen(store, displays, WALLPAPER)
 
     dock = Dock(store)
     desk.dock_provider = dock
