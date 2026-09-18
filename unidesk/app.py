@@ -39,6 +39,7 @@ from .providers.media import Media
 from .providers.audio import Audio
 from .providers.devdash import DevDash
 from .providers.devices import Devices
+from .providers.xd import XD
 from .providers.games import Games
 from .providers.league import League
 from .providers.network import Network
@@ -74,6 +75,8 @@ NEEDS = {
     "storage": {"storage"},
     "clipboard": {"clipboard"},
     "notifications": {"notifications"},
+    "xdchat": {"xd"},
+    "xdfeed": {"xd"},
     "mixer": {"audio"},
     "notes": set(),
     "timer": set(),
@@ -596,6 +599,7 @@ def main():
         "media": Media(), "system": System(), "weather": Weather(), "github": GitHub(),
         "network": Network(), "storage": Storage(), "clipboard": Clipboard(), "notifications": Notifications(),
         "audio": Audio(), "games": Games(), "league": League(), "devdash": DevDash(), "devices": Devices(),
+        "xd": XD(),
     }
     notes = Notes()
     media = providers["media"]
@@ -630,7 +634,8 @@ def main():
                       ("Storage", providers["storage"]), ("Clipboard", providers["clipboard"]),
                       ("Notifications", providers["notifications"]), ("Dock", dock), ("Search", search), ("Updater", updater),
                       ("Audio", providers["audio"]), ("Games", providers["games"]), ("League", providers["league"]),
-                      ("DevDash", providers["devdash"]), ("Devices", providers["devices"]), ("Notes", notes)):
+                      ("DevDash", providers["devdash"]), ("Devices", providers["devices"]), ("Notes", notes),
+                      ("XD", providers["xd"])):
         ctx.setContextProperty(name, obj)
     if not displays.attach(engine):
         return 1

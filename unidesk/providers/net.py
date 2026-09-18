@@ -34,3 +34,41 @@ def get_json(url: str, headers: dict | None = None, timeout: float = 12):
     if status >= 400 or not text:
         raise RuntimeError(f"{url.split('?')[0]} -> HTTP {status}")
     return json.loads(text)
+
+
+def send_json(
+    url: str,
+    body: dict | None = None,
+    headers: dict | None = None,
+    method: str = "POST",
+    timeout: float = 12,
+) -> tuple[int, object]:
+    """A JSON request that carries a body, and hands back the status with it.
+
+    The status comes back rather than raising, because the interesting answers
+    here are the refusals: 401 means the token has expired and the widget should
+    ask for the password again, and 422 carries the sentence explaining what was
+    wrong with what was sent.
+    """
+    data = json.dumps(body or {}).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            **(headers or {}),
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_CONTEXT) as res:
+            text = res.read().decode("utf-8", "replace")
+            return res.status, (json.loads(text) if text else None)
+    except urllib.error.HTTPError as e:
+        text = e.read().decode("utf-8", "replace") if e.fp else ""
+        try:
+            return e.code, (json.loads(text) if text else None)
+        except json.JSONDecodeError:
+            return e.code, None
