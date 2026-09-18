@@ -25,6 +25,11 @@
 param([switch]$Revoke)
 $ErrorActionPreference = 'Stop'
 
+# Printed first so a run identifies itself. A terminal that re-runs the command
+# it had in history will happily run an older copy of this file, and the error
+# that produces looks exactly like a script that was never fixed.
+"allow-signin-accent 2 (flags computed before the call)"
+
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $isAdmin = ([Security.Principal.WindowsPrincipal]$identity).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
