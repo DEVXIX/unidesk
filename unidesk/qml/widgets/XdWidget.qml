@@ -21,6 +21,9 @@ Card {
     // with somebody's name after it, which is the only two-level path here.
     property string section: ""
     property string openWith: ""
+    // The picture being looked at, "" for none. It covers the whole widget
+    // rather than opening a window: a widget that spawns windows is a program.
+    property string viewing: ""
 
     readonly property var sections: [
         { key: "messages", label: "Messages", icon: Icons.comment },
@@ -43,13 +46,16 @@ Card {
     function go(key) {
         section = key;
         openWith = "";
+        XD.closeThread();
+        XD.viewing(key);
         if (key === "messages") XD.refresh();
         else if (key === "wordle") XD.loadWordle();
         else if (key === "tweets" || key === "rooms") XD.loadSection(key);
     }
     function back() {
-        if (openWith !== "") openWith = "";
-        else section = "";
+        // Leaving something also stops the poll keeping it up to date.
+        if (openWith !== "") { openWith = ""; XD.closeThread(); }
+        else { section = ""; XD.viewing(""); }
     }
 
     // ---- header ---------------------------------------------------------------
@@ -354,7 +360,10 @@ Card {
         // A tweet is a person and a thing they posted, so it is drawn as one:
         // their picture and name, the words, and the image if there is one.
         ListView {
-            anchors.fill: parent
+            anchors {
+                top: parent.top; left: parent.left; right: parent.right
+                bottom: tweetBox.top; bottomMargin: 8
+            }
             visible: XD.signedIn && root.section === "tweets"
             clip: true; spacing: 8
             model: XD.section
@@ -389,16 +398,19 @@ Card {
                         size: 12; wrapMode: Text.WordWrap
                         maximumLineCount: 4; elide: Text.ElideRight
                     }
-                    Image {
+                    // Small on the timeline and rounded like everything else;
+                    // the full picture is a tap away rather than in your way.
+                    ShapedImage {
                         visible: media !== null && media.type === "image"
                         source: media ? media.url : ""
                         width: col.width
-                        fillMode: Image.PreserveAspectCrop
-                        // capped, so one tall picture cannot push the rest of the
-                        // timeline off the bottom of the widget
-                        height: visible ? Math.min(150, width * 0.62) : 0
-                        asynchronous: true
-                        clip: true
+                        height: visible ? Math.round(width * 0.42) : 0
+                        radius: 12
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: (mouse) => { root.viewing = media.url; mouse.accepted = true; }
+                        }
                     }
                     Row {
                         spacing: 12
@@ -412,6 +424,48 @@ Card {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: XD.open("tweet/" + modelData.id)
                 }
+            }
+        }
+
+        // ---- writing one ----------------------------------------------------------
+        // Text only, and one line of it: a widget is where you say something
+        // short. Anything longer, or with a picture on it, belongs on the site.
+        Item {
+            id: tweetBox
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+            visible: XD.signedIn && root.section === "tweets"
+            height: visible ? 34 : 0
+
+            Field {
+                id: tweetField
+                anchors { left: parent.left; right: sendTweet.left; rightMargin: 6; verticalCenter: parent.verticalCenter }
+                placeholder: "What's happening?"
+                onAccepted: XD.post(text)
+            }
+            Rectangle {
+                id: sendTweet
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                width: 34; height: 34; radius: 17
+                readonly property bool ready: tweetField.text.trim() !== "" && !XD.busy
+                color: ready ? Theme.c.primary : Theme.c.surfaceContainerHighest
+                MIcon {
+                    anchors.centerIn: parent
+                    icon: Icons.arrow_upward
+                    size: 16
+                    color: sendTweet.ready ? Theme.c.onPrimary : Theme.c.onSurfaceVariant
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: sendTweet.ready
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: XD.post(tweetField.text)
+                }
+            }
+            // Cleared only once it is really on the timeline, so a refusal does
+            // not also lose what you wrote.
+            Connections {
+                target: XD
+                function onPosted() { tweetField.text = ""; }
             }
         }
 
@@ -446,6 +500,33 @@ Card {
                 }
             }
         }
+
+    // ---- looking at a picture ----------------------------------------------------
+    Rectangle {
+        anchors.fill: parent
+        visible: root.viewing !== ""
+        radius: Theme.radius
+        color: Qt.rgba(0, 0, 0, 0.92)
+        z: 10
+
+        ShapedImage {
+            anchors { fill: parent; margins: 10 }
+            source: root.viewing
+            radius: 12
+        }
+        Rectangle {
+            anchors { top: parent.top; right: parent.right; margins: 12 }
+            width: 28; height: 28; radius: 14
+            color: Theme.c.surfaceContainerHighest
+            MIcon { anchors.centerIn: parent; icon: Icons.close; size: 15; color: Theme.c.onSurface }
+        }
+        // Anywhere closes it, which is what everybody tries first.
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.viewing = ""
+        }
+    }
 
     // Somebody's picture, or the first letter of their name when they have none.
     component Avatar: Rectangle {

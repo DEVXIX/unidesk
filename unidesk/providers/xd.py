@@ -111,6 +111,11 @@ def _as_count(value) -> int:
     return 0
 
 
+def _ids(items) -> list:
+    """What a list is, for telling "the same again" from "something new"."""
+    return [x.get("id") for x in items if isinstance(x, dict)]
+
+
 def _with_media(items: list) -> list:
     """Absolute addresses for anything a tweet will try to draw."""
     for row in items:
@@ -137,6 +142,8 @@ class XD(QObject):
     threadChanged = Signal()
     wordleChanged = Signal()
     sectionChanged = Signal()
+    # Raised once a tweet is actually on the timeline, so the box can clear.
+    posted = Signal()
     # Worker thread -> here. Qt makes this a queued connection across threads,
     # which is the whole point: nothing below touches state off the GUI thread.
     _result = Signal(str, "QVariant")
@@ -153,6 +160,7 @@ class XD(QObject):
         self._section: list = []
         self._thread: list = []
         self._thread_with = ""
+        self._open_section = ""
         self._wordle: dict = {}
         self._unread = 0
         self._badge = 0
@@ -239,6 +247,18 @@ class XD(QObject):
                 self._unread = data["unread"]
             if "badge" in data:
                 self._badge = data["badge"]
+            # Only when something actually arrived: replacing an identical model
+            # resets the ListView, and a timeline that jumps to the top every
+            # twenty seconds while you are reading it is worse than a stale one.
+            if "section" in data:
+                fresh = _with_media(data["section"])
+                if _ids(fresh) != _ids(self._section):
+                    self._section = fresh
+                    self.sectionChanged.emit()
+            if "thread" in data:
+                if _ids(data["thread"]) != _ids(self._thread):
+                    self._thread = data["thread"]
+                    self.threadChanged.emit()
             self.messagesChanged.emit()
             self.changed.emit()
 
@@ -249,6 +269,12 @@ class XD(QObject):
         elif kind == "section":
             self._section = _with_media(data.get("items") or [])
             self.sectionChanged.emit()
+
+        elif kind == "posted":
+            self._section = _with_media(data.get("items") or [])
+            self._set_error("")
+            self.sectionChanged.emit()
+            self.posted.emit()
 
         elif kind == "wordle":
             self._wordle = {"today": data.get("today") or {}, "stats": data.get("stats") or {}}
@@ -389,11 +415,28 @@ class XD(QObject):
                 chats[handle]["unread"] = chats[handle].get("unread", 0) + 1
         return sorted(chats.values(), key=lambda c: c["at"], reverse=True)
 
+    @Slot(str)
+    def viewing(self, name: str):
+        """What the widget is showing, so the poll can keep it current.
+
+        Without this the timeline was whatever it was the moment you opened it,
+        for as long as you left it open.
+        """
+        self._open_section = str(name or "")
+
+    @Slot()
+    def closeThread(self):
+        self._thread_with = ""
+
     @Slot()
     def refresh(self):
         if not self._token:
             return
         headers = self._headers()
+        # Read once here: the worker must not touch attributes the GUI thread
+        # is free to change under it.
+        open_section = self._open_section
+        thread_with = self._thread_with
 
         def run():
             out: dict = {}
@@ -419,6 +462,20 @@ class XD(QObject):
                         return
                     continue
                 out[key] = _as_count(body) if key in ("unread", "badge") else _as_list(body)
+            if open_section in ("tweets", "rooms"):
+                try:
+                    out["section"] = _as_list(
+                        get_json(f"{API}/v1/{open_section}", headers, timeout=TIMEOUT)
+                    )
+                except Exception:
+                    pass
+            if thread_with:
+                try:
+                    out["thread"] = _as_list(
+                        get_json(f"{API}/v1/messages/{thread_with}", headers, timeout=TIMEOUT)
+                    )
+                except Exception:
+                    pass
             self._result.emit("refresh", out)
 
         self._work(run)
@@ -459,6 +516,40 @@ class XD(QObject):
             except Exception:
                 body = None
             self._result.emit("thread", {"items": _as_list(body)})
+
+        self._work(run)
+
+    @Slot(str)
+    def post(self, text: str):
+        """Write a tweet. Text only - pictures are a file picker's job, not a widget's."""
+        text = str(text).strip()
+        if not text or not self._token:
+            return
+        self._set_busy(True)
+        headers = self._headers()
+
+        def run():
+            try:
+                status, body = send_json(
+                    f"{API}/v1/tweets", {"content": text}, headers, timeout=TIMEOUT
+                )
+            except Exception as e:
+                self._result.emit("error", {"message": f"xD would not take that: {e}"})
+                return
+            if status == 401:
+                self._result.emit("unauthorised", {})
+                return
+            if status >= 400:
+                # 422 carries the sentence explaining what was wrong with it.
+                said = body.get("message") if isinstance(body, dict) else None
+                self._result.emit("error", {"message": str(said or f"xD said no ({status}).")})
+                return
+            # Show the timeline it just landed on rather than only saying "sent".
+            try:
+                fresh = get_json(f"{API}/v1/tweets", headers, timeout=TIMEOUT)
+            except Exception:
+                fresh = None
+            self._result.emit("posted", {"items": _as_list(fresh)})
 
         self._work(run)
 
