@@ -8,8 +8,7 @@ Windows crops an account picture to a circle, so the shape is drawn inside that
 circle rather than out to its edges: a star whose points reach the corners of
 its own box is a star with its points cropped off. What surrounds it is your
 wallpaper, blurred, so the picture sits on the desktop it belongs to instead of
-on a disc of flat colour, and a ring in the theme's accent finishes it - the
-same border the widgets have.
+on a disc of flat colour.
 
 The shape is picked at random every time this runs, so signing in is not quite
 the same picture twice.
@@ -35,7 +34,7 @@ import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, QPointF, QRect, Qt, QTimer, Slot
-from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath
 
 from .providers.net import get_bytes
 
@@ -58,12 +57,10 @@ SPECS = {
     "circle": (0, 0.0, 0.0),
 }
 
-# How much of the circle the shape fills. Kept well short of the edge on
-# purpose: the gap is what lets the shape read at all. Filled to the ring, a
-# nine-lobed cookie holding a light photograph is just a circle with a wobble
-# on it - the blurred wallpaper showing through around it is what makes the
-# outline visible.
-INSET = 0.76
+# How much of the circle the shape fills. Right up to it: the picture should be
+# as big as the space Windows gives it. What makes the shape read is the
+# wallpaper showing through where the shape dips inwards, not a gap around it.
+INSET = 0.98
 
 
 def _home() -> Path:
@@ -178,11 +175,6 @@ class AccountPicture(QObject):
         self._avatar, self._avatar_for = image, who
         return image
 
-    def _accent(self) -> QColor:
-        raw = str((self._theme.c or {}).get("primary") or "#8ab4f8")
-        color = QColor(raw)
-        return color if color.isValid() else QColor("#8ab4f8")
-
     def render(self, size: int, shape: str) -> QImage:
         """One picture at one size: the wallpaper, the avatar in a shape, a ring."""
         # Drawn large and scaled down at the end, because a nine-lobed cookie at
@@ -222,12 +214,6 @@ class AccountPicture(QObject):
             )
             painter.restore()
 
-        # The border the widgets have, just inside the circle Windows crops to.
-        width = max(2.0, big * 0.022)
-        painter.setPen(QPen(self._accent(), width))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        half = width / 2
-        painter.drawEllipse(QRect(int(half), int(half), int(big - width), int(big - width)))
         painter.end()
 
         if big == size:

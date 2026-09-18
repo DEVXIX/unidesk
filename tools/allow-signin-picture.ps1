@@ -63,11 +63,16 @@ if ($LASTEXITCODE) {
 }
 
 if ($owned) {
-    # Back to stock. The grant above survives this: an entry on the list does
-    # not depend on who owns the folder.
+    # Try to put it back to stock. This usually will not work, and that is
+    # fine: handing ownership to somebody else needs SeRestorePrivilege, which
+    # administrators hold but Windows does not enable for them by default. The
+    # grant written above does not depend on it - an entry on the list is not
+    # tied to who owns the folder - so the end state either way is the folder
+    # owned by Administrators or SYSTEM, with this account able to write its
+    # own picture and nothing else changed.
     & icacls $dir /setowner "NT AUTHORITY\SYSTEM" /t | Out-Null
     if ($LASTEXITCODE) {
-        "note: the grant is in place, but ownership stayed with Administrators"
+        "ownership stayed with Administrators (handing it back needs SeRestorePrivilege); the grant is in place"
     } else {
         "ownership handed back to SYSTEM"
     }

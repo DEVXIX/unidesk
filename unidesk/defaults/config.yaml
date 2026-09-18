@@ -70,6 +70,15 @@ dock:
 lock_screen:
   enabled: false
   every_minutes: 10   # how often it is repainted while you are signed in
+  # The picture above your name on the sign-in screen: an avatar cut to one of
+  # the desk's shapes, on your blurred wallpaper, with a ring in the accent.
+  # Needs tools/allow-signin-picture.ps1 run once as administrator - Windows
+  # keeps that picture in a folder only SYSTEM and Administrators may write.
+  account_picture:
+    enabled: false
+    github: ""          # whose avatar: https://github.com/<name>.png
+    shape: random       # or cookie, cookie12, flower, star, burst, clover, pentagon, circle
+    every_minutes: 10   # a new shape each time it is redrawn
 
 # Search (the dock's search box, or the hotkey): apps, maths, settings, web.
 search:
