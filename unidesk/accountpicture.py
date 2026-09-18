@@ -4,14 +4,15 @@ This is the round picture above your name on the Windows sign-in screen, which
 is a different thing from the wallpaper lockscreen.py paints - that is what you
 see before you press a key, this is what you see after.
 
-Windows crops an account picture to a circle, so the shape is drawn inside that
-circle rather than out to its edges: a star whose points reach the corners of
-its own box is a star with its points cropped off. What surrounds it is your
-wallpaper, blurred, so the picture sits on the desktop it belongs to instead of
-on a disc of flat colour.
+By default it is simply your avatar, filling the whole picture, and the circle
+Windows crops it to is all the framing there is. Anything painted around the
+subject becomes a disc once that crop happens: a blurred wallpaper backdrop
+meant as depth reads as a hard ring around your face.
 
-The shape is picked at random every time this runs, so signing in is not quite
-the same picture twice.
+Ask for a shape and you get one of the desk's own - cookie, star, clover - with
+everything outside it left transparent and the file written as a PNG, so the
+sign-in screen's background shows through the gaps rather than a disc of
+something else. "random" picks a different one every time it is redrawn.
 
 Where it goes: the exact files the registry already points at, under
 C:\\Users\\Public\\AccountPictures\\<SID>\\. Those belong to SYSTEM and the
@@ -33,8 +34,8 @@ import random
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, QPointF, QRect, Qt, QTimer, Slot
-from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath
+from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QTimer, Slot
+from PySide6.QtGui import QImage, QPainter, QPainterPath
 
 from .providers.net import get_bytes
 
@@ -103,19 +104,6 @@ def shape_path(name: str, size: float) -> QPainterPath:
     return path
 
 
-def _blurred(image: QImage, size: int) -> QImage:
-    """A cheap blur: down to a handful of pixels and smoothly back up.
-
-    Qt's own blur lives in the graphics-view stack, which means a scene and a
-    render pass for what is a background behind a face - this reads the same at
-    a fraction of the work.
-    """
-    small = max(2, size // 22)
-    return image.scaled(
-        small, small, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
-    ).scaled(size, size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-
-
 class AccountPicture(QObject):
     """lock_screen.account_picture: the avatar above your name when you sign in."""
 
@@ -176,35 +164,37 @@ class AccountPicture(QObject):
         return image
 
     def render(self, size: int, shape: str) -> QImage:
-        """One picture at one size: the wallpaper, the avatar in a shape, a ring."""
-        # Drawn large and scaled down at the end, because a nine-lobed cookie at
-        # 32 pixels drawn directly is a staircase however much antialiasing is on.
+        """One picture at one size.
+
+        With no shape this is simply the avatar, filling the whole square, and
+        the circle Windows crops it to is the whole of the framing. That is the
+        default because anything painted around the shape becomes a disc once
+        that crop happens - a wallpaper backdrop meant as depth reads as a
+        hard ring around your face, which is exactly what it looked like.
+
+        With a shape, everything outside it is left transparent and the file is
+        written as a PNG, so the sign-in screen's own background shows through
+        the gaps instead of a disc of something else.
+        """
+        # Drawn large and scaled down, because a nine-lobed cookie at 32 pixels
+        # drawn directly is a staircase however much antialiasing is on.
         big = max(size, 256)
         canvas = QImage(big, big, QImage.Format.Format_ARGB32_Premultiplied)
-        canvas.fill(QColor(16, 16, 20))
+        canvas.fill(Qt.GlobalColor.transparent)
         painter = QPainter(canvas)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
-        wall = QImage(str(self._wallpaper))
-        if not wall.isNull():
-            scaled = wall.scaled(
-                big, big, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
-            )
-            crop = QRect((scaled.width() - big) // 2, (scaled.height() - big) // 2, big, big)
-            behind = _blurred(scaled.copy(crop), big)
-            painter.drawImage(QPoint(0, 0), behind)
-            # Darkened, so a face reads against it whatever the wallpaper is.
-            painter.fillRect(canvas.rect(), QColor(0, 0, 0, 90))
-
         face = self.avatar()
         if face is not None and not face.isNull():
-            inner = int(big * INSET)
+            plain = shape in ("", "none", "fill")
+            inner = big if plain else int(big * INSET)
             offset = (big - inner) / 2
-            path = shape_path(shape, inner)
-            path.translate(offset, offset)
             painter.save()
-            painter.setClipPath(path)
+            if not plain:
+                path = shape_path(shape, inner)
+                path.translate(offset, offset)
+                painter.setClipPath(path)
             fitted = face.scaled(
                 inner, inner, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
             )
@@ -213,7 +203,6 @@ class AccountPicture(QObject):
                 fitted,
             )
             painter.restore()
-
         painter.end()
 
         if big == size:
@@ -265,8 +254,17 @@ class AccountPicture(QObject):
         """Draw a new picture and put it where Windows will find it."""
         if not self._enabled:
             return
-        wanted = str(self._section().get("shape") or "random")
-        shape = wanted if wanted in shape_names() else random.choice(shape_names())
+        wanted = str(self._section().get("shape") or "none")
+        if wanted == "random":
+            shape = random.choice(shape_names())
+        elif wanted in shape_names():
+            shape = wanted
+        else:
+            shape = "none"
+        # A shaped picture needs the gaps around it to stay see-through, and
+        # JPEG has no way to say "nothing here". The paths still end in .jpg
+        # because the registry names them; Windows reads the file, not the name.
+        fmt = "JPG" if shape == "none" else "PNG"
 
         spare = _home() / "account-picture"
         try:
@@ -281,11 +279,11 @@ class AccountPicture(QObject):
             picture = self.render(size, shape)
             # unidesk's own copy always, so there is something to pick by hand
             # even where the grant has not been given.
-            picture.save(str(spare / f"account-{size}.jpg"), "JPG", 94)
+            picture.save(str(spare / f"account-{size}.jpg"), fmt, 94)
             target = targets.get(size)
             if target is None:
                 continue
-            if picture.save(str(target), "JPG", 94):
+            if picture.save(str(target), fmt, 94):
                 written += 1
             else:
                 denied += 1
