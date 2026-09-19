@@ -1,4 +1,6 @@
 # PyInstaller spec: python -m PyInstaller unidesk.spec  (run tools\build.ps1 instead)
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas = [
@@ -26,6 +28,22 @@ for package in ("materialyoucolor", "livekit.rtc", "_sounddevice_data", "soundde
     datas += d
     binaries += b
     hiddenimports += h
+
+# materialyoucolor's celebi links against numpy's OWN repaired copy of the C++
+# runtime, by the mangled name delvewheel gave it (msvcp140-<hash>.dll). numpy
+# ships that in numpy.libs, which is on the DLL search path only because
+# numpy's __init__ puts it there - and celebi is imported long before anything
+# imports numpy. Frozen, that leaves it unfindable and unidesk dies on its
+# first line with "DLL load failed while importing celebi".
+#
+# It only became reachable when numpy arrived with opencv. A copy goes where
+# Windows always looks.
+try:
+    import numpy as _numpy
+    _numpy_libs = Path(_numpy.__file__).resolve().parent.parent / "numpy.libs"
+    binaries += [(str(dll), ".") for dll in _numpy_libs.glob("msvcp140*.dll")]
+except Exception:
+    pass
 
 a = Analysis(
     ["unidesk.pyw"],
