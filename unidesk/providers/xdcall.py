@@ -864,6 +864,11 @@ class _Audio:
                 frame = event.frame
                 if not self._on_frame:
                     continue
+                # The encoder emits a handful of 8x8 frames while it warms up.
+                # They are not a picture, and drawing one is a blurred smear
+                # where somebody's face is about to be.
+                if frame.width < 32 or frame.height < 32:
+                    continue
                 # copy(), because the frame's buffer belongs to the stream and
                 # is reused the moment this coroutine yields.
                 image = QImage(
@@ -897,6 +902,27 @@ class _Audio:
         self._room = room
         platform_audio = None
         source = None
+
+        # Subscribed BEFORE connecting: a track that is already being published
+        # when we arrive is delivered the moment the connection is up, and a
+        # handler registered afterwards misses it.
+        #
+        # These take three arguments because they are given three. livekit's
+        # emit truncates to whatever the handler declares and says nothing, so
+        # a handler written with one would simply never see the publication -
+        # and the publication is what says whether this is a camera or a screen.
+        @room.on("track_subscribed")
+        def _subscribed(track, publication, participant):
+            # Audio needs nothing: the device module plays whatever arrives.
+            # Video has to be read, so it is.
+            if track.kind == rtc.TrackKind.KIND_VIDEO:
+                kind = "screen" if publication.source == rtc.TrackSource.SOURCE_SCREENSHARE else "camera"
+                asyncio.ensure_future(self._watch(track, kind))
+
+        @room.on("track_unsubscribed")
+        def _unsubscribed(track, publication, participant):
+            if track.kind == rtc.TrackKind.KIND_VIDEO and self._on_video_gone:
+                self._on_video_gone()
 
         try:
             await room.connect(self._url, self._token, rtc.RoomOptions(auto_subscribe=True))
