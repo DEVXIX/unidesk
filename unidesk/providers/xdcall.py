@@ -45,11 +45,12 @@ from .xd import API, SITE, _media, _read_session
 
 TIMEOUT = 12
 
-# Fast while a call is ringing or running, slow the rest of the time. The
-# routes are throttled server-side, and a widget that polls hard while nothing
-# is happening is a widget somebody uninstalls.
-IDLE_POLL_MS = 6_000
-LIVE_POLL_MS = 2_000
+# How soon a ring can reach you is exactly this number, because the poll is the
+# only notice xD gives. Six seconds was too long to wait for a telephone to
+# start ringing. Only POST /v1/calls is throttled (ten a minute, for redials);
+# asking whether anybody is calling is not, so this can afford to be brisk.
+IDLE_POLL_MS = 3_000
+LIVE_POLL_MS = 1_500
 
 # The ring's own sample rate. The call's audio never passes through here -
 # PlatformAudio owns the devices for that.
