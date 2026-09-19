@@ -10,10 +10,18 @@ datas = [
 binaries = []
 hiddenimports = collect_submodules("comtypes.gen") + collect_submodules("pycaw") + ["truststore", "pylnk3", "psutil"]
 
-# livekit ships its own 25 MB native library and cv2 a pile of DLLs; both are
-# found by collect_all and by nothing else, so a build without this starts
-# fine and then cannot take a call.
-for package in ("materialyoucolor", "livekit", "sounddevice", "cv2"):
+# The call's native libraries, each of which hides somewhere collect_all only
+# finds if it is named exactly right:
+#   livekit.rtc        - `livekit` is a NAMESPACE package (no __init__), so
+#                        collecting "livekit" finds nothing and the 24 MB
+#                        livekit_ffi.dll is silently left out.
+#   _sounddevice_data  - sounddevice is a single module, not a package, and
+#                        PortAudio lives in this separate one. Without it there
+#                        is no ring.
+#   cv2                - a pile of its own DLLs.
+# A build missing any of these starts perfectly and then cannot take a call,
+# which is the worst way for a dependency to be absent.
+for package in ("materialyoucolor", "livekit.rtc", "_sounddevice_data", "sounddevice", "cv2"):
     d, b, h = collect_all(package)
     datas += d
     binaries += b
