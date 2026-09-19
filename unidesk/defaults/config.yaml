@@ -60,6 +60,8 @@ dock:
   search: true
   clock_format: 12h            # 12h | 24h
   clock_seconds: false
+  show_desktop: true           # the sliver at the end of the dock: clears the apps, keeps the widgets
+  show_desktop_hotkey: ctrl+alt+d   # the same from the keyboard (restart to apply; blank = none)
   # pinned: filled in on first run from your taskbar pins and open apps
 
 # Your desk on the Windows lock screen. Windows will not let any program draw

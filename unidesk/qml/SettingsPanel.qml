@@ -52,6 +52,8 @@ Card {
             { path: "dock.hide_windows_taskbar", label: "Hide the Windows taskbar", kind: "bool", def: true },
             { path: "dock.icon_size", label: "Icon size", kind: "slider", min: 28, max: 64, step: 2, def: 40 },
             { path: "dock.zoom", label: "Hover zoom", kind: "slider", min: 1, max: 1.8, step: 0.05, def: 1.3 },
+            { path: "dock.show_desktop", label: "Show desktop at the end of the dock (the widgets stay)", kind: "bool", def: true },
+            { path: "dock.show_desktop_hotkey", label: "Show desktop hotkey (restart to apply; blank = none)", kind: "text", def: "ctrl+alt+d" },
             { path: "dock.badges", label: "Unread badges", kind: "bool", def: true },
             { path: "dock.now_playing", label: "Now playing", kind: "bool", def: true },
             { path: "dock.search", label: "Search box", kind: "bool", def: true },

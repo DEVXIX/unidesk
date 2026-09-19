@@ -569,6 +569,31 @@ Window {
                 }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Dock.openNotifications() }
             }
+            // Show desktop: the sliver at the very end, where Windows keeps it.
+            // Hiding the real taskbar took that corner away. This one clears
+            // the apps and leaves the widgets exactly where they are.
+            Item {
+                visible: dockWin.cfg.show_desktop !== false
+                width: visible ? 16 : 0
+                height: parent.height
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 3
+                    height: parent.height * (deskMouse.containsMouse ? 0.56 : 0.4)
+                    radius: 1.5
+                    color: deskMouse.containsMouse ? Theme.c.primary : Theme.c.onSurface
+                    opacity: deskMouse.pressed ? 1 : deskMouse.containsMouse ? 0.85 : 0.22
+                    Behavior on height { NumberAnimation { duration: 140 } }
+                    Behavior on opacity { NumberAnimation { duration: 140 } }
+                }
+                MouseArea {
+                    id: deskMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Dock.showDesktop()
+                }
+            }
         }
     }
 

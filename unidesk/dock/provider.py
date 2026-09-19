@@ -17,6 +17,7 @@ import psutil
 from PySide6.QtCore import Property, QObject, QTimer, QUrl, Signal, Slot
 
 from . import winapi
+from .showdesktop import ShowDesktop
 
 ICONS = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "unidesk" / "icons"
 PINNED_LNK = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Internet Explorer" / "Quick Launch" / "User Pinned" / "TaskBar"
@@ -101,6 +102,19 @@ class Dock(QObject):
         self._running = False
         self._generation = 0
         self._own_pid = os.getpid()
+        # The same list the dock draws its apps from, so what gets cleared is
+        # exactly what has a place on the dock - and never unidesk's own windows.
+        self._show_desktop = ShowDesktop(
+            windows=lambda: winapi.app_windows(self._own_pid),
+            minimize=winapi.minimize_quietly,
+            restore=winapi.restore,
+            is_minimized=winapi.is_minimized,
+            exists=winapi.exists,
+            activate=winapi.activate,
+        )
+        # Set by the app: the desk looks again at once, rather than when the
+        # next event or its one-second poll gets round to it.
+        self.after_show_desktop = None
         self._docks: list = []                     # one dock window per screen
         self._reserved: dict[int, tuple] = {}      # dock hwnd -> (monitor, height in physical px) it reserved
         self._wanted: dict[int, tuple] = {}        # dock hwnd -> (window, logical height), to re-apply
@@ -608,6 +622,22 @@ class Dock(QObject):
         pins.insert(max(0, min(index, len(pins))), pin)
         self._store.set_setting("dock.pinned", pins)
         QTimer.singleShot(50, self.refresh)
+
+    @Slot()
+    def showDesktop(self):
+        """Clear the desk down to the wallpaper and the widgets, or bring it back.
+
+        Not Win+D. Windows' version decides for itself what the desktop is, and
+        the widgets only come along while Qt has left their window owned by
+        Progman; this one minimises the apps and nothing else, so the widgets
+        never go anywhere to begin with.
+        """
+        self._show_desktop.toggle()
+        # A game that was full screen is minimised now: the widgets on its
+        # screen were idled for it, and should come back straight away.
+        if self.after_show_desktop:
+            QTimer.singleShot(60, self.after_show_desktop)
+        QTimer.singleShot(120, self.refresh)
 
     @Slot()
     def openStart(self):

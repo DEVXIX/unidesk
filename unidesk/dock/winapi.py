@@ -26,6 +26,9 @@ GWL_STYLE, GWL_EXSTYLE = -16, -20
 WS_EX_TOOLWINDOW, WS_EX_APPWINDOW, WS_EX_NOACTIVATE = 0x80, 0x40000, 0x08000000
 GW_OWNER = 4
 SW_RESTORE, SW_MINIMIZE = 9, 6
+# Minimised without taking the focus with it: minimising a dozen windows
+# with SW_MINIMIZE hands the focus to each next one in turn on the way down.
+SW_SHOWMINNOACTIVE = 7
 WM_CLOSE = 0x0010
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 DWMWA_CLOAKED = 14
@@ -35,6 +38,7 @@ for name, res, args in [
     ("EnumChildWindows", wintypes.BOOL, [HWND, ctypes.c_void_p, wintypes.LPARAM]),
     ("IsWindowVisible", wintypes.BOOL, [HWND]),
     ("IsIconic", wintypes.BOOL, [HWND]),
+    ("IsWindow", wintypes.BOOL, [HWND]),
     ("GetWindow", HWND, [HWND, wintypes.UINT]),
     ("GetWindowLongPtrW", LONG_PTR, [HWND, ctypes.c_int]),
     ("SetWindowLongPtrW", LONG_PTR, [HWND, ctypes.c_int, LONG_PTR]),
@@ -193,6 +197,23 @@ def activate(hwnd: int):
 
 def minimize(hwnd: int):
     user32.ShowWindow(HWND(hwnd), SW_MINIMIZE)
+
+
+def minimize_quietly(hwnd: int):
+    user32.ShowWindow(HWND(hwnd), SW_SHOWMINNOACTIVE)
+
+
+def restore(hwnd: int):
+    """Back to how it was before it was minimised - maximised if it was."""
+    user32.ShowWindow(HWND(hwnd), SW_RESTORE)
+
+
+def is_minimized(hwnd: int) -> bool:
+    return bool(user32.IsIconic(HWND(hwnd)))
+
+
+def exists(hwnd: int) -> bool:
+    return bool(user32.IsWindow(HWND(hwnd)))
 
 
 def close(hwnd: int):

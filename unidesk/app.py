@@ -470,6 +470,12 @@ class Desk(QObject):
         self._theme.set_wallpaper(str(WALLPAPER))
         self.wallpaperChanged.emit()
 
+    def recheck_fullscreen(self):
+        """Look again now, because something just changed what covers each
+        screen - Show desktop minimising a full-screen game, say. The widgets
+        idled for it should come back at once, not on the next poll."""
+        self._check_fullscreen()
+
     def _check_fullscreen(self):
         """Idle each screen (hide its widgets and dock, pause polling) while a game
         or video is fullscreen on it; and keep the desk windows on the desktop layer."""
@@ -620,6 +626,7 @@ def main():
 
     dock = Dock(store)
     desk.dock_provider = dock
+    dock.after_show_desktop = desk.recheck_fullscreen
     dock_settings = lambda: store.config.get("dock") or {}
 
     def start_dock():
@@ -765,6 +772,9 @@ def main():
 
     hotkey = GlobalHotkey()
     hotkey.add("ctrl+alt+e", lambda: desk.setEditing(not desk.editing))
+    show_desktop_key = str(dock_settings().get("show_desktop_hotkey") or "").strip()
+    if show_desktop_key:
+        hotkey.add(show_desktop_key, dock.showDesktop)
     search_cfg = store.config.get("search") or {}
     if dock_settings().get("enabled", True) is not False and search_cfg.get("enabled", True) and search_cfg.get("hotkey"):
         hotkey.add(str(search_cfg["hotkey"]), search.toggle)
