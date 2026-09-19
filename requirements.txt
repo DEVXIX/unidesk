@@ -7,3 +7,10 @@ comtypes>=1.4
 truststore>=0.10
 fonttools>=4.50
 pycaw>=20240316
+# xD voice calls: a real LiveKit client, the audio devices, and the ring.
+livekit>=1.0
+sounddevice>=0.4
+numpy>=1.26
+# and the two things a camera and a shared screen are captured with
+mss>=9.0
+opencv-python-headless>=4.10

@@ -27,6 +27,9 @@ Card {
     // The tweet being read, 0 for none. Opening one used to hand it to a
     // browser, which is a strange thing for a desktop widget to do.
     property int openTweetId: 0
+    // Choosing what to share, and watching what somebody sends, full size.
+    property bool picking: false
+    property bool watchFullScreen: false
 
     readonly property var sections: [
         { key: "messages", label: "Messages", icon: Icons.comment },
@@ -95,7 +98,8 @@ Card {
         }
         UText {
             anchors { left: lead.right; leftMargin: 8; verticalCenter: parent.verticalCenter }
-            text: root.openTweetId !== 0 ? "Tweet"
+            text: Calls.inCall ? "Call"
+                : root.openTweetId !== 0 ? "Tweet"
                 : root.openWith !== "" ? "@" + root.openWith
                 : root.section === "" ? "xD" : root.labelOf(root.section)
             size: 15; weight: Font.Medium
@@ -114,11 +118,238 @@ Card {
         id: body
         anchors { top: head.bottom; left: parent.left; right: parent.right; bottom: parent.bottom; leftMargin: 14; rightMargin: 14; bottomMargin: 14; topMargin: 10 }
 
+        // ---- a call, while there is one --------------------------------------
+        // It takes the widget over rather than sitting in a corner of it: while
+        // a call is up, everything you might want is about the call. The ring
+        // itself is elsewhere (CallCard.qml) - by the time you are looking at
+        // this, it has been answered.
+        Flickable {
+            anchors.fill: parent
+            visible: Calls.inCall
+            contentHeight: callPage.implicitHeight
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+
+            Column {
+                id: callPage
+                width: parent.width
+                spacing: 9
+
+                // ---- what they are sending ------------------------------------
+                Rectangle {
+                    width: parent.width
+                    height: visible ? Math.round(width * 0.56) : 0
+                    visible: Calls.videoKind !== ""
+                    radius: 12
+                    color: "#000000"
+                    clip: true
+
+                    Image {
+                        id: remoteVideo
+                        anchors.fill: parent
+                        fillMode: Image.PreserveAspectFit
+                        cache: false
+                        asynchronous: false
+                        // The tick is what makes Qt fetch it again: the same url
+                        // would be served from the cache forever.
+                        source: Calls.videoKind !== "" ? "image://xdcall/f" + Calls.videoTick : ""
+                    }
+
+                    UText {
+                        anchors { left: parent.left; top: parent.top; margins: 7 }
+                        text: Calls.videoKind === "screen" ? "their screen" : "their camera"
+                        size: 10.5
+                        color: "#ffffff"
+                        opacity: 0.75
+                    }
+
+                    // Full screen, for when a widget is too small to read what
+                    // somebody is showing you - which is most of the time.
+                    Rectangle {
+                        anchors { right: parent.right; top: parent.top; margins: 6 }
+                        width: 26; height: 26; radius: 13
+                        color: Qt.rgba(0, 0, 0, 0.55)
+                        MIcon { anchors.centerIn: parent; icon: Icons.open_in_full; size: 13; color: "#ffffff" }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.watchFullScreen = true
+                        }
+                    }
+                }
+
+                Row {
+                    spacing: 10
+                    ShapedImage {
+                        width: 46; height: 46
+                        shape: "cookie"
+                        source: Calls.call.avatar || ""
+                        visible: (Calls.call.avatar || "") !== ""
+                    }
+                    MShape {
+                        width: 46; height: 46
+                        shape: "cookie"
+                        color: Theme.c.surfaceContainerHighest
+                        visible: (Calls.call.avatar || "") === ""
+                    }
+                    Column {
+                        spacing: 1
+                        UText { text: Calls.call.name || "someone"; size: 14.5; weight: Font.Medium }
+                        UText {
+                            text: Calls.call.handle ? "@" + Calls.call.handle : ""
+                            size: 11.5; color: Theme.c.onSurfaceVariant
+                        }
+                        UText {
+                            // The thing you look at to know it is still up.
+                            text: Calls.connected ? Calls.duration : "Connecting..."
+                            size: 12; color: Theme.c.primary
+                        }
+                    }
+                }
+
+                UText { text: "Volume"; size: 11.5; color: Theme.c.onSurfaceVariant }
+                VolumeSlider {
+                    width: parent.width
+                    value: Calls.volume
+                    onMoved2: (v) => Calls.setVolume(v)
+                }
+
+                UText { text: "Microphone"; size: 11.5; color: Theme.c.onSurfaceVariant }
+                Column {
+                    width: parent.width
+                    spacing: 3
+                    Repeater {
+                        model: Calls.inputs
+                        Rectangle {
+                            required property var modelData
+                            width: callPage.width
+                            height: 28
+                            radius: 14
+                            color: modelData.id === Calls.inputId ? Theme.c.primaryContainer : Theme.c.surfaceContainerHighest
+                            UText {
+                                anchors { left: parent.left; leftMargin: 10; right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                                text: modelData.name
+                                size: 11.5
+                                elide: Text.ElideRight
+                                color: modelData.id === Calls.inputId ? Theme.c.onPrimaryContainer : Theme.c.onSurface
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Calls.setInput(modelData.id)
+                            }
+                        }
+                    }
+                }
+
+                UText { text: "Speakers"; size: 11.5; color: Theme.c.onSurfaceVariant }
+                Column {
+                    width: parent.width
+                    spacing: 3
+                    Repeater {
+                        model: Calls.outputs
+                        Rectangle {
+                            required property var modelData
+                            width: callPage.width
+                            height: 28
+                            radius: 14
+                            color: modelData.id === Calls.outputId ? Theme.c.primaryContainer : Theme.c.surfaceContainerHighest
+                            UText {
+                                anchors { left: parent.left; leftMargin: 10; right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                                text: modelData.name
+                                size: 11.5
+                                elide: Text.ElideRight
+                                color: modelData.id === Calls.outputId ? Theme.c.onPrimaryContainer : Theme.c.onSurface
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Calls.setOutput(modelData.id)
+                            }
+                        }
+                    }
+                }
+
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 10
+                    topPadding: 4
+
+                    Rectangle {
+                        width: 44; height: 44; radius: 22
+                        color: Calls.muted ? Theme.c.surfaceContainerHighest : Theme.c.primaryContainer
+                        MIcon {
+                            anchors.centerIn: parent
+                            icon: Calls.muted ? Icons.mic_off : Icons.mic
+                            size: 19
+                            color: Calls.muted ? Theme.c.onSurfaceVariant : Theme.c.onPrimaryContainer
+                        }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Calls.toggleMute() }
+                    }
+
+                    Rectangle {
+                        width: 44; height: 44; radius: 22
+                        color: Calls.cameraOn ? Theme.c.primaryContainer : Theme.c.surfaceContainerHighest
+                        MIcon {
+                            anchors.centerIn: parent
+                            icon: Calls.cameraOn ? Icons.videocam : Icons.videocam_off
+                            size: 19
+                            color: Calls.cameraOn ? Theme.c.onPrimaryContainer : Theme.c.onSurfaceVariant
+                        }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Calls.toggleCamera() }
+                    }
+
+                    Rectangle {
+                        width: 44; height: 44; radius: 22
+                        color: Calls.sharingScreen ? Theme.c.primaryContainer : Theme.c.surfaceContainerHighest
+                        MIcon {
+                            anchors.centerIn: parent
+                            icon: Calls.sharingScreen ? Icons.stop_screen_share : Icons.screen_share
+                            size: 19
+                            color: Calls.sharingScreen ? Theme.c.onPrimaryContainer : Theme.c.onSurfaceVariant
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            // Stopping needs no question; starting does, because
+                            // "share my screen" is rarely the whole screen.
+                            onClicked: Calls.sharingScreen ? Calls.stopShare() : (root.picking = true)
+                        }
+                    }
+
+                    Rectangle {
+                        width: 44; height: 44; radius: 22
+                        color: "#d9463c"
+                        MIcon { anchors.centerIn: parent; icon: Icons.call_end; size: 19; color: "#ffffff" }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Calls.hangUp() }
+                    }
+                }
+
+                UText {
+                    width: parent.width
+                    visible: Calls.sharingScreen && Calls.shareName !== ""
+                    text: "Sharing " + Calls.shareName
+                    size: 11; color: Theme.c.primary
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                }
+
+                UText {
+                    width: parent.width
+                    visible: Calls.error !== ""
+                    text: Calls.error
+                    size: 11; color: Theme.c.error; wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
+        }
+
         // ---- signed out --------------------------------------------------------
         Column {
             anchors.fill: parent
             spacing: 8
-            visible: !XD.signedIn
+            visible: !XD.signedIn && !Calls.inCall
 
             UText {
                 width: parent.width
@@ -151,7 +382,7 @@ Card {
         // ---- the menu ----------------------------------------------------------
         Flow {
             anchors.fill: parent
-            visible: XD.signedIn && root.section === ""
+            visible: XD.signedIn && root.section === "" && !Calls.inCall
             spacing: 8
 
             Repeater {
@@ -193,7 +424,7 @@ Card {
         // ---- messages: the people -----------------------------------------------
         ListView {
             anchors.fill: parent
-            visible: XD.signedIn && root.section === "messages" && root.openWith === ""
+            visible: XD.signedIn && root.section === "messages" && root.openWith === "" && !Calls.inCall
             clip: true; spacing: 4
             model: XD.conversations
             delegate: Item {
@@ -228,7 +459,7 @@ Card {
         ListView {
             id: thread
             anchors { top: parent.top; left: parent.left; right: parent.right; bottom: composer.top; bottomMargin: 8 }
-            visible: XD.signedIn && root.openWith !== ""
+            visible: XD.signedIn && root.openWith !== "" && !Calls.inCall
             clip: true; spacing: 4
             model: XD.thread
             onCountChanged: positionViewAtEnd()
@@ -258,7 +489,7 @@ Card {
         Field {
             id: composer
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            visible: XD.signedIn && root.openWith !== ""
+            visible: XD.signedIn && root.openWith !== "" && !Calls.inCall
             placeholder: "Message @" + root.openWith
             onAccepted: { if (text.trim() !== "") { XD.send(root.openWith, text); text = ""; } }
         }
@@ -269,7 +500,7 @@ Card {
         // four times. Opening one hands it to the website.
         ListView {
             anchors.fill: parent
-            visible: XD.signedIn && ["alerts", "rooms"].indexOf(root.section) >= 0
+            visible: XD.signedIn && ["alerts", "rooms"].indexOf(root.section) >= 0 && !Calls.inCall
             clip: true; spacing: 2
             model: root.section === "alerts" ? XD.notifications : XD.section
             delegate: Item {
@@ -302,7 +533,7 @@ Card {
         // than kept here - reopening the widget shows the game where you left it.
         Column {
             anchors.fill: parent
-            visible: XD.signedIn && root.section === "wordle"
+            visible: XD.signedIn && root.section === "wordle" && !Calls.inCall
             spacing: 10
 
             readonly property var game: (XD.wordle && XD.wordle.today) ? XD.wordle.today : ({})
@@ -379,7 +610,7 @@ Card {
                 top: parent.top; left: parent.left; right: parent.right
                 bottom: tweetBox.top; bottomMargin: 8
             }
-            visible: XD.signedIn && root.section === "tweets" && root.openTweetId === 0
+            visible: XD.signedIn && root.section === "tweets" && root.openTweetId === 0 && !Calls.inCall
             clip: true; spacing: 8
             id: timeline
             model: XD.section
@@ -450,7 +681,7 @@ Card {
         Item {
             id: tweetBox
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            visible: XD.signedIn && root.section === "tweets" && root.openTweetId === 0
+            visible: XD.signedIn && root.section === "tweets" && root.openTweetId === 0 && !Calls.inCall
             height: visible ? 34 : 0
 
             Field {
@@ -493,7 +724,7 @@ Card {
         Item {
             id: reader
             anchors.fill: parent
-            visible: XD.signedIn && root.openTweetId !== 0
+            visible: XD.signedIn && root.openTweetId !== 0 && !Calls.inCall
 
             ListView {
                 anchors {
@@ -652,7 +883,7 @@ Card {
         // daily ones come first because they are the ones with a streak to keep.
         ListView {
             anchors.fill: parent
-            visible: XD.signedIn && root.section === "games"
+            visible: XD.signedIn && root.section === "games" && !Calls.inCall
             clip: true; spacing: 3
             model: XD.games
             delegate: Item {
@@ -679,6 +910,96 @@ Card {
             }
         }
 
+    }
+
+    // ---- choosing what to share ----------------------------------------------------
+    Rectangle {
+        anchors.fill: parent
+        visible: root.picking
+        radius: Theme.radius
+        color: Qt.rgba(0, 0, 0, 0.93)
+        z: 11
+
+        Column {
+            anchors { fill: parent; margins: 14 }
+            spacing: 8
+
+            UText { text: "Share what?"; size: 14; weight: Font.Medium }
+
+            Rectangle {
+                width: parent.width; height: 34; radius: 17
+                color: Theme.c.primaryContainer
+                UText {
+                    anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
+                    text: "My whole screen"; size: 12.5; color: Theme.c.onPrimaryContainer
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { Calls.startShare("", "your whole screen"); root.picking = false; }
+                }
+            }
+
+            ListView {
+                width: parent.width
+                height: parent.height - 92
+                clip: true; spacing: 4
+                model: root.picking ? Calls.shareWindows : []
+                delegate: Rectangle {
+                    required property var modelData
+                    width: ListView.view.width
+                    height: 38
+                    radius: 12
+                    color: Theme.c.surfaceContainerHighest
+                    Column {
+                        anchors { left: parent.left; leftMargin: 11; right: parent.right; rightMargin: 11; verticalCenter: parent.verticalCenter }
+                        spacing: 0
+                        UText { width: parent.width; text: modelData.name; size: 12; elide: Text.ElideRight }
+                        UText { width: parent.width; text: modelData.app; size: 10.5; color: Theme.c.onSurfaceVariant; elide: Text.ElideRight }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { Calls.startShare(modelData.id, modelData.name); root.picking = false; }
+                    }
+                }
+            }
+
+            Rectangle {
+                width: parent.width; height: 30; radius: 15
+                color: Theme.c.surfaceContainerHighest
+                UText { anchors.centerIn: parent; text: "Never mind"; size: 12; color: Theme.c.onSurfaceVariant }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.picking = false }
+            }
+        }
+    }
+
+    // ---- watching it properly ------------------------------------------------------
+    Rectangle {
+        anchors.fill: parent
+        visible: root.watchFullScreen && Calls.videoKind !== ""
+        radius: Theme.radius
+        color: "#000000"
+        z: 12
+
+        Image {
+            anchors { fill: parent; margins: 4 }
+            fillMode: Image.PreserveAspectFit
+            cache: false
+            asynchronous: false
+            source: parent.visible ? "image://xdcall/full" + Calls.videoTick : ""
+        }
+        Rectangle {
+            anchors { top: parent.top; right: parent.right; margins: 10 }
+            width: 28; height: 28; radius: 14
+            color: Qt.rgba(1, 1, 1, 0.16)
+            MIcon { anchors.centerIn: parent; icon: Icons.close; size: 15; color: "#ffffff" }
+        }
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.watchFullScreen = false
+        }
     }
 
     // ---- looking at a picture ----------------------------------------------------

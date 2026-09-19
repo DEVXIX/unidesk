@@ -30,6 +30,8 @@ from .displays import Displays
 from .dock.provider import Dock
 from .captionbuttons import CaptionButtons
 from .accountpicture import AccountPicture
+from .providers.xdcall import XDCall
+from .xdcallwindow import XDCallWindow
 from .lockscreen import LockScreen
 from .signinaccent import SignInAccent
 from .frames import WindowFrames
@@ -610,6 +612,9 @@ def main():
     app_themes = AppThemes(store, theme)
     caption = CaptionButtons(store, theme)
     lock_screen = LockScreen(store, displays, WALLPAPER, desk)
+    # xD calls: the poll and the audio, and the card they arrive in.
+    xd_calls = XDCall()
+    xd_call_window = XDCallWindow(xd_calls, theme, store)
     account_picture = AccountPicture(store, theme, WALLPAPER)
     sign_in_accent = SignInAccent(store, theme)
 
@@ -629,6 +634,8 @@ def main():
 
     engine = QQmlApplicationEngine()
     engine.addImageProvider("clipboard", ClipboardImages(providers["clipboard"]))
+    # Whatever the other person in a call is sending; see providers/xdcall.py.
+    engine.addImageProvider("xdcall", xd_calls.image_provider())
     ctx = engine.rootContext()
     search = Search(store)
     updater = Updater()
@@ -638,7 +645,7 @@ def main():
                       ("Notifications", providers["notifications"]), ("Dock", dock), ("Search", search), ("Updater", updater),
                       ("Audio", providers["audio"]), ("Games", providers["games"]), ("League", providers["league"]),
                       ("DevDash", providers["devdash"]), ("Devices", providers["devices"]), ("Notes", notes),
-                      ("XD", providers["xd"])):
+                      ("XD", providers["xd"]), ("Calls", xd_calls)):
         ctx.setContextProperty(name, obj)
     if not displays.attach(engine):
         return 1
