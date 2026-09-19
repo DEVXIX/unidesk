@@ -11,5 +11,7 @@ pycaw>=20240316
 livekit>=1.0
 sounddevice>=0.4
 numpy>=1.26
+# talking to the game window's browser, to hand it the xD session
+websocket-client>=1.7
 # and what a camera is captured with
 opencv-python-headless>=4.10

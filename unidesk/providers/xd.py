@@ -716,6 +716,35 @@ class XD(QObject):
 
         self._work(run)
 
+    @Slot(str, bool)
+    def play(self, slug: str, big: bool):
+        """Open a game in a window of its own.
+
+        Not `open`, which hands the address to whatever the system does with
+        links and lands in a tab among thirty others. The arcade games are
+        Flash played through an emulator, so a browser has to draw them - but
+        it does not have to look like one.
+        """
+        from . import xdgames
+
+        slug = str(slug or "").strip().lstrip("/")
+        if not slug:
+            return
+        url = f"{SITE}/games/{slug}"
+        # The widget is signed in; the browser is not, and xD keeps its session
+        # in localStorage where nothing carries it across. So the token goes
+        # with it.
+        session = _read_session()
+        if not xdgames.open_game(
+            url,
+            big=bool(big),
+            token=str(session.get("token") or ""),
+            user_id=str(self._me_id or ""),
+        ):
+            # No Chromium-based browser at all: the address still has to go
+            # somewhere rather than nowhere.
+            self.open(f"games/{slug}")
+
     @Slot(str)
     def open(self, where: str):
         """Hand something to the website, for anything a widget should not do."""

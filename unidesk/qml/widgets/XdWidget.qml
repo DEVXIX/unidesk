@@ -95,6 +95,29 @@ Card {
                 onClicked: root.back()
             }
         }
+        // Ring the person whose conversation is open. It sits in the header
+        // because that is where you are when you decide to call somebody.
+        Rectangle {
+            id: callButton
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+            visible: XD.signedIn && root.openWith !== "" && !Calls.inCall && !Calls.isOutgoing
+            width: 26; height: 26; radius: 13
+            color: ring.containsMouse ? Theme.c.primary : Theme.c.primaryContainer
+            MIcon {
+                anchors.centerIn: parent
+                icon: Icons.call
+                size: 14
+                color: ring.containsMouse ? Theme.c.onPrimary : Theme.c.onPrimaryContainer
+            }
+            MouseArea {
+                id: ring
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: Calls.callHandle(root.openWith)
+            }
+        }
+
         UText {
             anchors { left: lead.right; leftMargin: 8; verticalCenter: parent.verticalCenter }
             text: Calls.inCall ? "Call"
@@ -632,12 +655,71 @@ Card {
                     id: pic
                     url: who.profile_picture || ""
                     size: 28
-                    anchors { left: parent.left; leftMargin: 8; top: parent.top; topMargin: 8 }
+                    anchors { left: parent.left; leftMargin: 8; top: parent.top }
+                    // Level with the name it belongs to, not with the tweet
+                    // being answered above it - otherwise the reply's face
+                    // looks like it belongs to whoever is being replied to.
+                    anchors.topMargin: 8 + (quoteBox.visible ? quoteBox.height + col.spacing : 0)
                 }
                 Column {
                     id: col
                     anchors { left: pic.right; leftMargin: 8; right: parent.right; rightMargin: 8; top: parent.top; topMargin: 7 }
                     spacing: 4
+
+                    // What this is a reply to.
+                    //
+                    // The timeline hands back a reply INSTEAD of the tweet it
+                    // answers - the parent is never a row of its own - and it
+                    // carries that parent along with it. Drawn without this, a
+                    // conversation looked like the original tweet had been
+                    // deleted the moment somebody replied to it.
+                    Rectangle {
+                        id: quoteBox
+                        width: col.width
+                        visible: modelData.parent !== null && modelData.parent !== undefined
+                        height: visible ? quoted.implicitHeight + 12 : 0
+                        radius: 9
+                        color: Theme.c.surfaceContainerHighest
+                        opacity: 0.6
+
+                        Row {
+                            id: quoted
+                            anchors { left: parent.left; leftMargin: 7; right: parent.right; rightMargin: 7; verticalCenter: parent.verticalCenter }
+                            spacing: 6
+                            Avatar {
+                                url: (modelData.parent && modelData.parent.author
+                                    ? modelData.parent.author.profile_picture : "") || ""
+                                size: 18
+                            }
+                            Column {
+                                width: quoted.width - 24
+                                spacing: 1
+                                UText {
+                                    width: parent.width
+                                    text: modelData.parent && modelData.parent.author
+                                        ? (modelData.parent.author.display_name
+                                            || modelData.parent.author.username || "someone")
+                                        : ""
+                                    size: 11; weight: Font.Medium; elide: Text.ElideRight
+                                    color: Theme.c.onSurfaceVariant
+                                }
+                                UText {
+                                    width: parent.width
+                                    text: (modelData.parent ? modelData.parent.content : "") || ""
+                                    size: 11.5; wrapMode: Text.WordWrap
+                                    maximumLineCount: 3; elide: Text.ElideRight
+                                }
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: (mouse) => {
+                                if (modelData.parent) root.readTweet(modelData.parent.id);
+                                mouse.accepted = true;
+                            }
+                        }
+                    }
                     Row {
                         spacing: 5
                         UText { text: who.display_name || who.username || "someone"; size: 12.5; weight: Font.Medium }
@@ -910,7 +992,14 @@ Card {
                 MouseArea {
                     id: play
                     anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onClicked: XD.open("games/" + modelData.slug)
+                    // Wordle is already here, played properly against the API;
+                    // sending it to a browser window would be a step backwards.
+                    // Everything else needs one - the arcade games are Flash.
+                    // They get most of the screen, because a Club Penguin game
+                    // in a small frame is unplayable; the daily ones get a page.
+                    onClicked: modelData.slug === "wordle"
+                        ? root.go("wordle")
+                        : XD.play(modelData.slug, !modelData.daily)
                 }
             }
         }
