@@ -13,7 +13,7 @@ hiddenimports = collect_submodules("comtypes.gen") + collect_submodules("pycaw")
 # livekit ships its own 25 MB native library and cv2 a pile of DLLs; both are
 # found by collect_all and by nothing else, so a build without this starts
 # fine and then cannot take a call.
-for package in ("materialyoucolor", "livekit", "sounddevice", "mss", "cv2"):
+for package in ("materialyoucolor", "livekit", "sounddevice", "cv2"):
     d, b, h = collect_all(package)
     datas += d
     binaries += b

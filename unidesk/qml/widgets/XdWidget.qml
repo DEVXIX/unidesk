@@ -27,8 +27,7 @@ Card {
     // The tweet being read, 0 for none. Opening one used to hand it to a
     // browser, which is a strange thing for a desktop widget to do.
     property int openTweetId: 0
-    // Choosing what to share, and watching what somebody sends, full size.
-    property bool picking: false
+    // Watching what somebody sends, full size.
     property bool watchFullScreen: false
 
     readonly property var sections: [
@@ -243,6 +242,39 @@ Card {
                     }
                 }
 
+                UText {
+                    text: "Camera"
+                    size: 11.5; color: Theme.c.onSurfaceVariant
+                    visible: Calls.cameras.length > 0
+                }
+                Column {
+                    width: parent.width
+                    spacing: 3
+                    visible: Calls.cameras.length > 0
+                    Repeater {
+                        model: Calls.cameras
+                        Rectangle {
+                            required property var modelData
+                            width: callPage.width
+                            height: 28
+                            radius: 14
+                            color: modelData.id === Calls.cameraId ? Theme.c.primaryContainer : Theme.c.surfaceContainerHighest
+                            UText {
+                                anchors { left: parent.left; leftMargin: 10; right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                                text: modelData.name
+                                size: 11.5
+                                elide: Text.ElideRight
+                                color: modelData.id === Calls.cameraId ? Theme.c.onPrimaryContainer : Theme.c.onSurface
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Calls.setCamera(modelData.id)
+                            }
+                        }
+                    }
+                }
+
                 UText { text: "Speakers"; size: 11.5; color: Theme.c.onSurfaceVariant }
                 Column {
                     width: parent.width
@@ -302,37 +334,10 @@ Card {
 
                     Rectangle {
                         width: 44; height: 44; radius: 22
-                        color: Calls.sharingScreen ? Theme.c.primaryContainer : Theme.c.surfaceContainerHighest
-                        MIcon {
-                            anchors.centerIn: parent
-                            icon: Calls.sharingScreen ? Icons.stop_screen_share : Icons.screen_share
-                            size: 19
-                            color: Calls.sharingScreen ? Theme.c.onPrimaryContainer : Theme.c.onSurfaceVariant
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            // Stopping needs no question; starting does, because
-                            // "share my screen" is rarely the whole screen.
-                            onClicked: Calls.sharingScreen ? Calls.stopShare() : (root.picking = true)
-                        }
-                    }
-
-                    Rectangle {
-                        width: 44; height: 44; radius: 22
                         color: "#d9463c"
                         MIcon { anchors.centerIn: parent; icon: Icons.call_end; size: 19; color: "#ffffff" }
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Calls.hangUp() }
                     }
-                }
-
-                UText {
-                    width: parent.width
-                    visible: Calls.sharingScreen && Calls.shareName !== ""
-                    text: "Sharing " + Calls.shareName
-                    size: 11; color: Theme.c.primary
-                    horizontalAlignment: Text.AlignHCenter
-                    elide: Text.ElideRight
                 }
 
                 UText {
@@ -910,68 +915,6 @@ Card {
             }
         }
 
-    }
-
-    // ---- choosing what to share ----------------------------------------------------
-    Rectangle {
-        anchors.fill: parent
-        visible: root.picking
-        radius: Theme.radius
-        color: Qt.rgba(0, 0, 0, 0.93)
-        z: 11
-
-        Column {
-            anchors { fill: parent; margins: 14 }
-            spacing: 8
-
-            UText { text: "Share what?"; size: 14; weight: Font.Medium }
-
-            Rectangle {
-                width: parent.width; height: 34; radius: 17
-                color: Theme.c.primaryContainer
-                UText {
-                    anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
-                    text: "My whole screen"; size: 12.5; color: Theme.c.onPrimaryContainer
-                }
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: { Calls.startShare("", "your whole screen"); root.picking = false; }
-                }
-            }
-
-            ListView {
-                width: parent.width
-                height: parent.height - 92
-                clip: true; spacing: 4
-                model: root.picking ? Calls.shareWindows : []
-                delegate: Rectangle {
-                    required property var modelData
-                    width: ListView.view.width
-                    height: 38
-                    radius: 12
-                    color: Theme.c.surfaceContainerHighest
-                    Column {
-                        anchors { left: parent.left; leftMargin: 11; right: parent.right; rightMargin: 11; verticalCenter: parent.verticalCenter }
-                        spacing: 0
-                        UText { width: parent.width; text: modelData.name; size: 12; elide: Text.ElideRight }
-                        UText { width: parent.width; text: modelData.app; size: 10.5; color: Theme.c.onSurfaceVariant; elide: Text.ElideRight }
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: { Calls.startShare(modelData.id, modelData.name); root.picking = false; }
-                    }
-                }
-            }
-
-            Rectangle {
-                width: parent.width; height: 30; radius: 15
-                color: Theme.c.surfaceContainerHighest
-                UText { anchors.centerIn: parent; text: "Never mind"; size: 12; color: Theme.c.onSurfaceVariant }
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.picking = false }
-            }
-        }
     }
 
     // ---- watching it properly ------------------------------------------------------

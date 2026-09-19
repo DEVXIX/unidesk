@@ -34,6 +34,10 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
+
+# Before cv2 is imported anywhere: probing for cameras asks about numbers that
+# are not cameras, and OpenCV writes a paragraph about each one.
+os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")
 import time
 
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
@@ -86,10 +90,6 @@ def _ring_tone() -> "object | None":
 # somebody watching a window; higher costs bandwidth nobody notices the benefit
 # of, and a screen grab already takes ~27 ms of that budget.
 VIDEO_FPS = 15
-# What a screen is scaled to before it goes out. A 4K desktop sent whole is
-# 33 MB a frame before encoding, and the person watching it in a widget cannot
-# see the difference.
-SCREEN_WIDTH = 1280
 
 
 class _Capture:
@@ -138,79 +138,12 @@ class _Capture:
         raise NotImplementedError
 
 
-class _ScreenCapture(_Capture):
-    """Your screen, scaled down, fifteen times a second."""
-
-    @staticmethod
-    def size():
-        import mss
-
-        with mss.mss() as sct:
-            monitor = sct.monitors[1]
-        scale = min(1.0, SCREEN_WIDTH / monitor["width"])
-        # Even dimensions: an encoder given an odd width has to pad it.
-        return (int(monitor["width"] * scale) // 2 * 2, int(monitor["height"] * scale) // 2 * 2)
-
-    def _frames(self):
-        import cv2
-        import mss
-        import numpy as np
-
-        with mss.mss() as sct:
-            monitor = sct.monitors[1]
-            while not self._stop.is_set():
-                shot = sct.grab(monitor)
-                image = np.frombuffer(shot.raw, dtype=np.uint8).reshape(shot.height, shot.width, 4)
-                if (shot.width, shot.height) != (self._width, self._height):
-                    image = cv2.resize(image, (self._width, self._height), interpolation=cv2.INTER_AREA)
-                yield self._rtc.VideoFrame(
-                    self._width, self._height, self._rtc.VideoBufferType.BGRA, image.tobytes()
-                )
-
-
-class _WindowCapture(_Capture):
-    """One window, asked to draw itself.
-
-    Not the rectangle it occupies: see xdshare. A window that disappears ends
-    the share rather than sending black - somebody closing what they were
-    showing is the ordinary way a share ends.
-    """
-
-    def __init__(self, source, rtc, width: int, height: int, hwnd: int):
-        super().__init__(source, rtc, width, height)
-        self._hwnd = hwnd
-
-    @staticmethod
-    def size(hwnd: int):
-        from . import xdshare
-
-        width, height = xdshare.window_size(hwnd)
-        if width <= 0:
-            return (0, 0)
-        scale = min(1.0, SCREEN_WIDTH / width)
-        return (int(width * scale) // 2 * 2, int(height * scale) // 2 * 2)
-
-    def _frames(self):
-        import cv2
-        import numpy as np
-
-        from . import xdshare
-
-        while not self._stop.is_set():
-            got = xdshare.grab_window(self._hwnd)
-            if got is None:
-                return
-            raw, width, height = got
-            image = np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4)
-            if (width, height) != (self._width, self._height):
-                image = cv2.resize(image, (self._width, self._height), interpolation=cv2.INTER_AREA)
-            yield self._rtc.VideoFrame(
-                self._width, self._height, self._rtc.VideoBufferType.BGRA, image.tobytes()
-            )
-
-
 class _CameraCapture(_Capture):
-    """Your webcam."""
+    """Your webcam - whichever one you picked."""
+
+    def __init__(self, source, rtc, width: int, height: int, index: int = 0):
+        super().__init__(source, rtc, width, height)
+        self._index = index
 
     @staticmethod
     def size():
@@ -222,7 +155,7 @@ class _CameraCapture(_Capture):
 
         # DirectShow rather than the default backend: on Windows the default
         # takes seconds to open a camera and sometimes never answers at all.
-        camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        camera = cv2.VideoCapture(self._index, cv2.CAP_DSHOW)
         if not camera.isOpened():
             print("[unidesk] xD call: no camera")
             return
@@ -292,7 +225,7 @@ class XDCall(QObject):
         self._last_uuid = ""
         self._declined: set[str] = set()
         self._since = 0.0
-        self._share_name = ""
+        self._camera_id = "0"
         self._frames = CallFrames()
         self._video_tick = 0
         self._video_kind = ""
@@ -682,50 +615,38 @@ class XDCall(QObject):
     def cameraOn(self):
         return bool(self._audio and self._audio.publishing("camera"))
 
-    @Property(bool, notify=changed)
-    def sharingScreen(self):
-        return bool(self._audio and self._audio.publishing("screen"))
-
     @Property(int, notify=videoChanged)
     def videoTick(self):
-        """Counts frames. QML puts it in the image url so the picture reloads."""
+        """Counts frames. QML puts it in the image url so the picture reloads;
+        the same url would be served from Qt's cache forever."""
         return self._video_tick
 
     @Property(str, notify=videoChanged)
     def videoKind(self):
-        """"camera", "screen", or empty when nobody is sending anything."""
+        """"camera", "screen", or empty when nobody is sending anything.
+
+        Empty matters: QML reads a property that does not exist as undefined,
+        and `undefined !== ""` is true - which drew an empty black video panel
+        on every call.
+        """
         return self._video_kind
 
     @Property("QVariant", notify=changed)
-    def shareWindows(self):
-        """Everything that could be shared, asked for fresh every time the
-        picker opens - windows come and go while somebody decides."""
-        from . import xdshare
+    def cameras(self):
+        from . import xdcamera
 
-        return xdshare.windows()
+        return xdcamera.cameras()
 
     @Property(str, notify=changed)
-    def shareName(self):
-        """What is being shared, so the call page can say so rather than just
-        showing a lit button."""
-        return self._share_name
+    def cameraId(self):
+        return self._camera_id
 
-    @Slot(str, str)
-    def startShare(self, window_id: str, name: str):
-        """Share one window, or the whole screen when the id is empty."""
-        if not self._audio:
-            return
-        self._share_name = name or "your screen"
-        self._audio.start_share(str(window_id or ""))
-        QTimer.singleShot(700, self.changed.emit)
-        self.changed.emit()
-
-    @Slot()
-    def stopShare(self):
+    @Slot(str)
+    def setCamera(self, camera_id: str):
+        """Pick a camera. Switching while it is on restarts it on the new one."""
+        self._camera_id = str(camera_id or "0")
         if self._audio:
-            self._audio.stop_share()
-        self._share_name = ""
-        QTimer.singleShot(400, self.changed.emit)
+            self._audio.set_camera(int(self._camera_id or 0))
         self.changed.emit()
 
     @Slot()
@@ -733,13 +654,6 @@ class XDCall(QObject):
         if self._audio:
             self._audio.toggle_video("camera")
             QTimer.singleShot(600, self.changed.emit)
-
-    @Slot()
-    def toggleShare(self):
-        if self.sharingScreen:
-            self.stopShare()
-        else:
-            self.startShare("", "your whole screen")
 
     @Slot()
     def toggleMute(self):
@@ -766,6 +680,7 @@ class XDCall(QObject):
             token,
             on_state=lambda live: self._result.emit("audio", {"live": live}),
             on_frame=lambda image, kind: self._result.emit("frame", {"image": image, "kind": kind}),
+            camera_index=int(self._camera_id or 0),
             on_video_gone=lambda: self._result.emit("video_gone", {}),
             input_id=self._input_id,
             output_id=self._output_id,
@@ -775,7 +690,6 @@ class XDCall(QObject):
         self.changed.emit()
 
     def _end_audio(self):
-        self._share_name = ""
         self._clock.stop()
         self._since = 0.0
         if self._audio:
@@ -814,10 +728,12 @@ class _Audio:
         output_id: str = "",
         on_frame=None,
         on_video_gone=None,
+        camera_index: int = 0,
     ):
         self._url, self._token = url, token
         self._on_state = on_state
         self._on_frame, self._on_video_gone = on_frame, on_video_gone
+        self._camera_index = camera_index
         self._input_id, self._output_id = input_id, output_id
         self._platform_audio = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -879,59 +795,22 @@ class _Audio:
     def publishing(self, kind: str) -> bool:
         return kind in self._video
 
-    def start_share(self, window_id: str):
-        """Begin sharing: one window when given an id, the whole screen when not."""
+    def set_camera(self, index: int):
+        """Use a different camera. A camera already being sent is stopped and
+        started again on the new one, because a capture is bound to the device
+        it opened."""
+        self._camera_index = index
+        if "camera" not in self._video:
+            return
         loop = self._loop
         if loop is None or not loop.is_running():
             return
-        asyncio.run_coroutine_threadsafe(self._start_share(window_id), loop)
 
-    def stop_share(self):
-        loop = self._loop
-        if loop is None or not loop.is_running():
-            return
-        asyncio.run_coroutine_threadsafe(self._stop_kind("screen"), loop)
+        async def swap():
+            await self._stop_kind("camera")
+            await self._toggle_video("camera")
 
-    async def _start_share(self, window_id: str):
-        from livekit import rtc
-
-        await self._stop_kind("screen")
-        room = self._room
-        if room is None:
-            return
-        try:
-            if window_id:
-                hwnd = int(window_id)
-                width, height = _WindowCapture.size(hwnd)
-                if width <= 0:
-                    return
-                maker = lambda source: _WindowCapture(source, rtc, width, height, hwnd)  # noqa: E731
-            else:
-                width, height = _ScreenCapture.size()
-                maker = lambda source: _ScreenCapture(source, rtc, width, height)  # noqa: E731
-
-            source = rtc.VideoSource(width, height, is_screencast=True)
-            track = rtc.LocalVideoTrack.create_video_track("screen", source)
-            publication = await room.local_participant.publish_track(
-                track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_SCREENSHARE)
-            )
-            capture = maker(source)
-            capture.start()
-            self._video["screen"] = {"capture": capture, "publication": publication, "source": source}
-        except Exception as e:
-            print(f"[unidesk] xD call: could not share that: {e}")
-
-    async def _stop_kind(self, kind: str):
-        running = self._video.pop(kind, None)
-        if not running:
-            return
-        running["capture"].stop()
-        room = self._room
-        if room is not None:
-            try:
-                await room.local_participant.unpublish_track(running["publication"].sid)
-            except Exception:
-                pass
+        asyncio.run_coroutine_threadsafe(swap(), loop)
 
     def toggle_video(self, kind: str):
         """Start or stop sending the camera, or the screen.
@@ -956,19 +835,13 @@ class _Audio:
             return
 
         try:
-            maker = _ScreenCapture if kind == "screen" else _CameraCapture
-            width, height = maker.size()
-            source = rtc.VideoSource(width, height, is_screencast=(kind == "screen"))
+            width, height = _CameraCapture.size()
+            source = rtc.VideoSource(width, height)
             track = rtc.LocalVideoTrack.create_video_track(kind, source)
             publication = await room.local_participant.publish_track(
-                track,
-                rtc.TrackPublishOptions(
-                    source=rtc.TrackSource.SOURCE_SCREENSHARE
-                    if kind == "screen"
-                    else rtc.TrackSource.SOURCE_CAMERA
-                ),
+                track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_CAMERA)
             )
-            capture = maker(source, rtc, width, height)
+            capture = _CameraCapture(source, rtc, width, height, self._camera_index)
             capture.start()
             self._video[kind] = {"capture": capture, "publication": publication, "source": source}
         except Exception as e:
