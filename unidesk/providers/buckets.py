@@ -25,6 +25,21 @@ PAGE = 200
 DOWNLOADS = Path.home() / "Downloads"
 
 
+def as_dict(value) -> dict:
+    """What QML actually hands over for `{ host: ..., user: ... }`.
+
+    A plain JavaScript object arrives as a QJSValue, not a dict, and calling
+    dict() on it raises - which is what the Connect button did: the form
+    looked like it did nothing at all, because the slot threw before it ever
+    reached the connection. Asked for as a QVariantMap it converts by itself,
+    but anything that still arrives raw is unwrapped here too.
+    """
+    unwrap = getattr(value, "toVariant", None)
+    if callable(unwrap):
+        value = unwrap()
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _client(details: dict):
     """A boto3 S3 client for Amazon or for whatever else is on that endpoint."""
     import boto3
@@ -233,9 +248,9 @@ class Buckets(QObject):
             browser = self._browsers[ident] = _Browser(ident, self)
         return browser
 
-    @Slot(str, "QVariant")
+    @Slot(str, "QVariantMap")
     def open(self, ident: str, details):
-        self._browser(ident).connect(dict(details or {}))
+        self._browser(ident).connect(as_dict(details))
 
     @Slot(str, str)
     def openSaved(self, ident: str, name: str):

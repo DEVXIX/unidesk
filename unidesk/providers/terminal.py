@@ -75,6 +75,21 @@ def _ask_first(known: dict):
     return Ask()
 
 
+def as_dict(value) -> dict:
+    """What QML actually hands over for `{ host: ..., user: ... }`.
+
+    A plain JavaScript object arrives as a QJSValue, not a dict, and calling
+    dict() on it raises - which is what the Connect button did: the form
+    looked like it did nothing at all, because the slot threw before it ever
+    reached the connection. Asked for as a QVariantMap it converts by itself,
+    but anything that still arrives raw is unwrapped here too.
+    """
+    unwrap = getattr(value, "toVariant", None)
+    if callable(unwrap):
+        value = unwrap()
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _accept_quietly():
     """Take whatever key is offered, and write nothing down."""
     import paramiko
@@ -337,7 +352,7 @@ class Terminals(QObject):
             session = self._sessions[ident] = _Session(ident, self)
         return session
 
-    @Slot(str, "QVariant")
+    @Slot(str, "QVariantMap")
     def open(self, ident: str, details):
         """Connect this pane. `details` is what the form holds.
 
@@ -347,7 +362,7 @@ class Terminals(QObject):
         """
         session = self._session(ident)
         session.close()
-        session.connect(dict(details or {}))
+        session.connect(as_dict(details))
 
     @Slot(str, str)
     def openSaved(self, ident: str, name: str):
