@@ -31,10 +31,20 @@ def git(*args: str, input: bytes | None = None) -> str:
 def token() -> str:
     if os.environ.get("GITHUB_TOKEN"):
         return os.environ["GITHUB_TOKEN"]
-    out = git("credential", "fill", input=b"protocol=https\nhost=github.com\n\n")
-    for line in out.splitlines():
-        if line.startswith("password="):
-            return line.split("=", 1)[1]
+    # Asked for twice, because Windows' credential manager files what it has
+    # under the account it belongs to. Without a username it decides it knows
+    # nothing and tries to ask - which fails outright anywhere there is nobody
+    # to ask, such as a release being cut by something unattended.
+    owner = REPO.split("/")[0]
+    for ask in (b"protocol=https\nhost=github.com\n\n",
+                f"protocol=https\nhost=github.com\nusername={owner}\n\n".encode()):
+        try:
+            out = git("-c", "credential.interactive=never", "credential", "fill", input=ask)
+        except SystemExit:
+            continue
+        for line in out.splitlines():
+            if line.startswith("password="):
+                return line.split("=", 1)[1]
     raise SystemExit("No GitHub credentials: set GITHUB_TOKEN or run `git push` once to sign in.")
 
 
