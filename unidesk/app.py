@@ -791,10 +791,23 @@ def main():
     desktop_menu_action = QAction("New terminal on desktop right-click", checkable=True,
                                   checked=deskmenu.installed())
 
+    classic_action = QAction("Classic right-click menu (all of Windows)", checkable=True,
+                             checked=deskmenu.classic_menu())
+
+    def classic_toggled(on: bool):
+        tray.showMessage("unidesk", "Restarting Explorer…")
+        if deskmenu.set_classic_menu(on):
+            tray.showMessage("unidesk", "Right-click the desktop: the menu is all there now."
+                             if on else "Windows 11's own menu is back.")
+
+    classic_action.toggled.connect(classic_toggled)
+
     def desktop_menu_toggled(on: bool):
         deskmenu.apply(on)
         if on:
-            tray.showMessage("unidesk", "Right-click the desktop, then “Show more options”.")
+            where = ("Right-click the desktop." if deskmenu.classic_menu()
+                     else "Right-click the desktop, then “Show more options”.")
+            tray.showMessage("unidesk", where)
 
     desktop_menu_action.toggled.connect(desktop_menu_toggled)
     startup_action = QAction("Start with Windows", checkable=True, checked=_startup_enabled())
@@ -802,7 +815,7 @@ def main():
     quit_action = QAction("Quit")
     quit_action.triggered.connect(app.quit)
     menu.addMenu(terminal_menu)
-    for action in (desktop_menu_action, edit_action, None, file_action, folder_action, export_action, import_action, pins_action, startup_action, None, update_action, quit_action):
+    for action in (desktop_menu_action, classic_action, edit_action, None, file_action, folder_action, export_action, import_action, pins_action, startup_action, None, update_action, quit_action):
         menu.addSeparator() if action is None else menu.addAction(action)
     tray.setContextMenu(menu)
     tray.activated.connect(lambda reason: reason == QSystemTrayIcon.ActivationReason.DoubleClick and desk.setEditing(not desk.editing))
