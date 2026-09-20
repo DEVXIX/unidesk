@@ -151,6 +151,18 @@ Card {
                 iconColor: Theme.c.onSurfaceVariant
                 onClicked: root.menuOpen = !root.menuOpen
             }
+            // Closing it is a button in the corner, like on anything else with
+            // a title bar - not something to go looking for in a menu, and not
+            // something you should have to be in edit mode to do.
+            IconButton {
+                id: shut
+                icon: Icons.close; size: 24; iconSize: 14
+                iconColor: shut.hovered ? Theme.c.onError : Theme.c.onSurfaceVariant
+                color: shut.hovered ? Theme.c.error : "transparent"
+                property bool hovered: false
+                onClicked: Desk.removeWidget(root.widgetId)
+                HoverHandler { onHoveredChanged: shut.hovered = hovered }
+            }
         }
     }
 

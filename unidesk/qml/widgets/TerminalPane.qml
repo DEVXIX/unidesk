@@ -95,6 +95,17 @@ Item {
     Component.onCompleted: startIfReady()
     onPaneIdChanged: startIfReady()
 
+    // A pane that is taken away - the widget closed, or the layout changed
+    // from four panes to one - leaves a connection and the thread reading it
+    // behind unless it says so. Nothing would ever look at that session
+    // again, and it would keep the machine on the other end busy for the rest
+    // of the session.
+    Component.onDestruction: {
+        if (paneId === "") return;
+        if (storage) Buckets.close(paneId);
+        else Terminals.close(paneId);
+    }
+
     onWidthChanged: fit()
     onHeightChanged: fit()
     // The first pane to be told it can type, takes the keys.
