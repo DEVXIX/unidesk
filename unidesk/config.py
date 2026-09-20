@@ -19,6 +19,24 @@ CONFIG_FILE = CONFIG_DIR / "config.yaml"
 DEFAULT_FILE = Path(__file__).parent / "defaults" / "config.yaml"
 
 
+def from_qml(value):
+    """Whatever QML handed over, as something Python and YAML both understand.
+
+    A JavaScript array or object arrives as a QJSValue. ruamel cannot write
+    one of those into a file - it raises "cannot represent an object" - and an
+    edit that dies there leaves the config half-written at best. Everything
+    coming the other way over that boundary goes through here first.
+    """
+    unwrap = getattr(value, "toVariant", None)
+    if callable(unwrap):
+        value = unwrap()
+    if isinstance(value, dict):
+        return {str(k): from_qml(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [from_qml(v) for v in value]
+    return value
+
+
 def _plain(value):
     """ruamel's commented maps/lists -> plain dicts/lists for QML."""
     if isinstance(value, dict):
@@ -83,6 +101,12 @@ class ConfigStore(QObject):
         whole layout would be gone. Writing beside it and renaming is atomic,
         so a reader sees either the old file or the new one.
         """
+        # Nothing empty ever goes near the real file, whatever asked for it.
+        # This is the last line of defence and it is deliberately dumb: there
+        # is no situation in which writing nothing over somebody's desk is the
+        # right answer, so it does not need to know why it was asked.
+        if not text.strip():
+            raise OSError("refusing to write an empty config.yaml")
         spare = CONFIG_FILE.with_name(CONFIG_FILE.name + ".tmp")
         spare.write_text(text, encoding="utf-8")
         # Windows refuses to rename over a file somebody has open - an editor
@@ -169,6 +193,26 @@ class ConfigStore(QObject):
             return False
         out = StringIO()
         self._yaml.dump(doc, out)
+        fresh = out.getvalue()
+
+        # A desk does not empty itself. If what came out of the dump has lost
+        # the widgets the file went in with, something is wrong with the edit
+        # and not with the desk, so the edit is the thing to throw away. What
+        # it tried to write is kept for whoever has to work out why.
+        had = len(_widgets(self._yaml.load(text).get("widgets")))
+        now = len(_widgets((self._yaml.load(fresh) or {}).get("widgets"))) if fresh.strip() else 0
+        if had and not now:
+            spoilt = CONFIG_FILE.with_name("config.refused.yaml")
+            try:
+                spoilt.write_text(fresh, encoding="utf-8")
+            except OSError:
+                pass
+            self.error = (f"an edit would have removed all {had} widgets, so it was refused "
+                          f"(what it tried to write is in {spoilt.name})")
+            print(f"[unidesk] {self.error}")
+            self.changed.emit()
+            return False
+
         # The version being replaced, kept beside it. Cheap, and the one thing
         # anybody wants after a desk full of widgets goes missing.
         try:
@@ -176,7 +220,7 @@ class ConfigStore(QObject):
         except OSError:
             pass
         try:
-            self._write(out.getvalue())
+            self._write(fresh)
         except OSError as e:
             self.error = str(e)
             self.changed.emit()
@@ -191,6 +235,8 @@ class ConfigStore(QObject):
         reloads of the desk; a widget being resized would do that on every
         release.
         """
+        values = from_qml(values) or {}
+
         def change(doc):
             item = self._find(doc, widget_id)
             if item is None:
@@ -244,6 +290,8 @@ class ConfigStore(QObject):
             self.changed.emit()
 
     def set_option(self, widget_id: str, key: str, value):
+        value = from_qml(value)
+
         def change(doc):
             item = self._find(doc, widget_id)
             if item is None:

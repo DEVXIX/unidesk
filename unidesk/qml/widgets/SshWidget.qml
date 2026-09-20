@@ -39,17 +39,23 @@ Card {
     property bool typing: false
     property bool menuOpen: false
 
-    // Which saved connection each pane is on, by position.
+    // Which saved connection each pane is on, by position, and whether it is
+    // a machine or a bucket. Written as "ssh:name" / "s3:name"; a bare name
+    // is a machine, which is what the first version of this wrote.
     readonly property var connections: {
         var saved = opt("panes", []);
         var out = [];
         for (var i = 0; i < paneCount; i++) out.push(saved && saved[i] ? String(saved[i]) : "");
         return out;
     }
-    function remember(index, name) {
-        if (root.connections[index] === name) return;   // nothing to write down
+    function kindOf(entry) { return entry.indexOf("s3:") === 0 ? "s3" : "ssh"; }
+    function nameOf(entry) { var at = entry.indexOf(":"); return at < 0 ? entry : entry.slice(at + 1); }
+
+    function remember(index, kind, name) {
+        var entry = name === "" ? "" : kind + ":" + name;
+        if (root.connections[index] === entry) return;   // nothing to write down
         var out = [];
-        for (var i = 0; i < paneCount; i++) out.push(i === index ? name : root.connections[i]);
+        for (var i = 0; i < paneCount; i++) out.push(i === index ? entry : root.connections[i]);
         Desk.setOption(root.widgetId, "panes", out);
     }
     function setLayout(shape) {
@@ -171,11 +177,12 @@ Card {
                 width: grid.cellWidth
                 height: grid.cellHeight
                 paneId: root.widgetId + ":" + index
-                connectionName: root.connections[index]
+                connectionName: root.nameOf(root.connections[index])
+                kind: root.kindOf(root.connections[index])
                 typing: root.typing
                 compact: root.paneCount > 1
-                onChose: (name) => root.remember(index, name)
-                onCleared: root.remember(index, "")
+                onChose: (kind, name) => root.remember(index, kind, name)
+                onCleared: root.remember(index, "ssh", "")
             }
         }
     }
