@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import os
+import time
 from io import StringIO
 from pathlib import Path
 
@@ -72,8 +73,57 @@ class ConfigStore(QObject):
 
     # ---- reading ---------------------------------------------------------------
 
+    def _write(self, text: str):
+        """Put the file in place in one step.
+
+        write_text truncates and then writes, which leaves a moment where the
+        file is empty - and an empty config parses perfectly well as a desk
+        with nothing on it. Anything reading at that moment (the watcher,
+        another copy of unidesk, a script) could see it, save it back, and the
+        whole layout would be gone. Writing beside it and renaming is atomic,
+        so a reader sees either the old file or the new one.
+        """
+        spare = CONFIG_FILE.with_name(CONFIG_FILE.name + ".tmp")
+        spare.write_text(text, encoding="utf-8")
+        # Windows refuses to rename over a file somebody has open - an editor
+        # with it on screen, another copy of unidesk reading it. That is a
+        # moment, not a state, so it is worth waiting out rather than falling
+        # back to the truncating write that caused all this.
+        for attempt in range(60):
+            try:
+                os.replace(spare, CONFIG_FILE)
+                return
+            except PermissionError:
+                time.sleep(0.02)
+        # Still held after a second. There is no safe way to write in place -
+        # truncating first is what lost a desk full of widgets in the first
+        # place - so the change is given up on and said out loud. The file on
+        # disk is still the last good one.
+        spare.unlink(missing_ok=True)
+        raise OSError("config.yaml is held open by something else; the change was not saved")
+
+    @staticmethod
+    def _read() -> str:
+        """The file's text, waiting out the instant it is being replaced.
+
+        Replacing the file atomically means there is a moment when opening it
+        fails - which is the right kind of failure, because the alternative is
+        opening it successfully and finding it empty.
+        """
+        for attempt in range(40):
+            try:
+                return CONFIG_FILE.read_text(encoding="utf-8")
+            except OSError:
+                time.sleep(0.01)
+        return CONFIG_FILE.read_text(encoding="utf-8")   # let the real error out
+
     def _load(self):
-        text = CONFIG_FILE.read_text(encoding="utf-8")
+        text = self._read()
+        if not text.strip():
+            # Empty is not "no widgets", it is a file we caught mid-write or
+            # one that has been damaged. Keep what we already had.
+            self.error = "config.yaml is empty - keeping the last good layout"
+            return
         self._last_text = text
         try:
             raw = _plain(self._yaml.load(text)) or {}
@@ -93,7 +143,7 @@ class ConfigStore(QObject):
         if str(CONFIG_FILE) not in self._watcher.files() and CONFIG_FILE.exists():
             self._watcher.addPath(str(CONFIG_FILE))
         try:
-            text = CONFIG_FILE.read_text(encoding="utf-8")
+            text = self._read()
         except OSError:
             return
         if text == self._last_text:
@@ -105,16 +155,52 @@ class ConfigStore(QObject):
     # All edits go through ruamel's round-trip document so comments survive.
 
     def _edit(self, change) -> bool:
-        doc = self._yaml.load(CONFIG_FILE.read_text(encoding="utf-8"))
+        text = self._read()
+        doc = self._yaml.load(text) if text.strip() else None
+        if not isinstance(doc, dict):
+            # Whatever is on disk is not a config. Writing an edit on top of
+            # that would turn a bad moment into a lost desk.
+            self.error = "config.yaml could not be read - nothing was changed"
+            self.changed.emit()
+            return False
         if doc.get("widgets") is None:
             doc["widgets"] = []
         if change(doc) is False:
             return False
         out = StringIO()
         self._yaml.dump(doc, out)
-        CONFIG_FILE.write_text(out.getvalue(), encoding="utf-8")
+        # The version being replaced, kept beside it. Cheap, and the one thing
+        # anybody wants after a desk full of widgets goes missing.
+        try:
+            CONFIG_FILE.with_name("config.previous.yaml").write_text(text, encoding="utf-8")
+        except OSError:
+            pass
+        try:
+            self._write(out.getvalue())
+        except OSError as e:
+            self.error = str(e)
+            self.changed.emit()
+            return False
         self._load()
         return True
+
+    def set_options(self, widget_id: str, values: dict):
+        """Several options at once, in one edit.
+
+        Two calls to set_option are two whole read-modify-writes and two
+        reloads of the desk; a widget being resized would do that on every
+        release.
+        """
+        def change(doc):
+            item = self._find(doc, widget_id)
+            if item is None:
+                return False
+            if not isinstance(item.get("options"), dict):
+                item["options"] = {}
+            for key, value in values.items():
+                item["options"][key] = value
+        if self._edit(change):
+            self.changed.emit()
 
     @staticmethod
     def _find(doc, widget_id: str):

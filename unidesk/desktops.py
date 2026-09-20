@@ -112,6 +112,20 @@ class Desktops(QObject):
         self._current, self._count = current, count
         self.changed.emit()
 
+    def now(self) -> tuple[int, int]:
+        """(desktop showing, how many there are) right now, or (0, 0).
+
+        For the moment a terminal is spawned, which happens whether or not
+        anything was watching yet.
+        """
+        if not self._usable():
+            return (0, 0)
+        try:
+            current, count = _read()
+        except Exception:
+            return (self._current, self._count)
+        return (current, count)
+
     # ---- what QML binds to ------------------------------------------------
 
     @Property(int, notify=changed)

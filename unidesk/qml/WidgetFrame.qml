@@ -60,6 +60,30 @@ Item {
     }
     function toggleOptions() { Desk.select(Desk.selected === frame.widgetId ? "" : frame.widgetId); }
 
+    // ---- moved by the widget itself, not only by the edit-mode overlay --------
+    //
+    // A terminal is a window as far as anybody using it is concerned: you drag
+    // its bar to move it and its corner to resize it, whether or not the desk
+    // happens to be in edit mode. These are the three steps of that drag, kept
+    // here because where a widget sits is the frame's business.
+    function snapTo(v) { return Desk.grid > 0 ? Math.round(v / Desk.grid) * Desk.grid : Math.round(v); }
+
+    function startMove() {
+        frame.dragX = frame.x;
+        frame.dragY = frame.y;
+        frame.dragging = true;
+    }
+    function moveBy(dx, dy, fromX, fromY) {
+        frame.dragX = Math.max(0, Math.min(frame.areaWidth - frame.width, snapTo(fromX + dx)));
+        frame.dragY = Math.max(0, Math.min(frame.areaHeight - frame.height, snapTo(fromY + dy)));
+    }
+    function endMove(startedX, startedY) {
+        var moved = frame.dragX !== startedX || frame.dragY !== startedY;
+        if (moved) frame.save({ left: frame.dragX, top: frame.dragY });
+        frame.dragging = false;
+        return moved;
+    }
+
     signal geometryMoved()
 
     x: dragging ? dragX : resizing ? resizeX : onScreenX(homeX)
@@ -113,6 +137,10 @@ Item {
                 // always its own, so widgets that wanted their id were
                 // quietly never given one.
                 if (item.widgetId !== undefined) item.widgetId = Qt.binding(() => frame.widgetId);
+                // A widget that wants to be moved and resized like a window
+                // (the terminal) gets the frame itself, and drives the same
+                // drag the edit-mode overlay does.
+                if (item.frame !== undefined) item.frame = frame;
             }
         }
 

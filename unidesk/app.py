@@ -355,15 +355,30 @@ class Desk(QObject):
         """New widgets start in the middle of the screen they were added on."""
         return self._store.add_widget(widget_type, 0, 0, screen=screen, anchor="center")
 
+    @Slot(str, int, int)
+    def setSize(self, widget_id: str, width: int, height: int):
+        """A widget's new size, written once. Two set_option calls would be
+        two rewrites of the file and two reloads of the whole desk."""
+        self._store.set_options(widget_id, {"width": int(width), "height": int(height)})
+
     @Slot(result=str)
-    def newTerminal(self) -> str:
+    @Slot(str, result=str)
+    def newTerminal(self, layout: str = "1x1") -> str:
         """Put a terminal on the desk and answer which widget it is.
 
-        Deliberately blank: it opens on its list of saved connections, which
-        is the question anybody opening a terminal is about to answer.
+        It opens blank, on its list of saved connections, because that is the
+        question anybody opening a terminal is about to answer.
+
+        On a machine with more than one virtual desktop it is kept to the one
+        it was made on. A terminal you opened somewhere else turning up over
+        whatever you switched to is the thing people complain about, and a
+        window would never do it.
         """
-        return self._store.add_widget("ssh", 0, 0, screen=1, anchor="center",
-                                      options={"layout": "1x1"})
+        options = {"layout": layout if layout in ("1x1", "2x1", "2x2") else "1x1"}
+        current, count = self._providers["desktops"].now()
+        if current > 0 and count > 1:
+            options["desktop"] = str(current)
+        return self._store.add_widget("ssh", 0, 0, screen=1, anchor="center", options=options)
 
     @Slot(str)
     def removeWidget(self, widget_id: str):
@@ -606,7 +621,12 @@ def main():
                 except (ValueError, psutil.Error):
                     pass
             return 0
-        probe.write(b"terminal" if "--new-terminal" in sys.argv else b"edit")
+        if "--new-terminal" in sys.argv:
+            after = sys.argv[sys.argv.index("--new-terminal") + 1:]
+            shape = after[0] if after and not after[0].startswith("--") else "1x1"
+            probe.write(b"terminal " + shape.encode("ascii", "ignore"))
+        else:
+            probe.write(b"edit")
         probe.waitForBytesWritten(300)
         return 0
     if "--quit" in sys.argv:
@@ -696,8 +716,11 @@ def main():
     tray = QSystemTrayIcon(_tray_icon(theme.c.get("primary", "#ffb1c1")))
     tray.setToolTip("unidesk")
     menu = QMenu()
-    terminal_action = QAction("New terminal")
-    terminal_action.triggered.connect(lambda: desk.newTerminal())
+    terminal_menu = QMenu("New terminal")
+    for label, shape in (("One pane", "1x1"), ("Two panes", "2x1"), ("Four panes", "2x2")):
+        action = QAction(label, terminal_menu)
+        action.triggered.connect(lambda _=False, s=shape: desk.newTerminal(s))
+        terminal_menu.addAction(action)
     edit_action = QAction("Edit widgets\tCtrl+Alt+E")
     edit_action.triggered.connect(lambda: desk.setEditing(not desk.editing))
     folder_action = QAction("Open config folder")
@@ -778,7 +801,8 @@ def main():
     startup_action.toggled.connect(_set_startup)
     quit_action = QAction("Quit")
     quit_action.triggered.connect(app.quit)
-    for action in (terminal_action, desktop_menu_action, edit_action, None, file_action, folder_action, export_action, import_action, pins_action, startup_action, None, update_action, quit_action):
+    menu.addMenu(terminal_menu)
+    for action in (desktop_menu_action, edit_action, None, file_action, folder_action, export_action, import_action, pins_action, startup_action, None, update_action, quit_action):
         menu.addSeparator() if action is None else menu.addAction(action)
     tray.setContextMenu(menu)
     tray.activated.connect(lambda reason: reason == QSystemTrayIcon.ActivationReason.DoubleClick and desk.setEditing(not desk.editing))
@@ -799,8 +823,9 @@ def main():
                 sock.write(str(os.getpid()).encode())  # `--quit` waits for this process to end
                 sock.flush()
                 QTimer.singleShot(0, app.quit)
-            elif word == b"terminal":
-                desk.newTerminal()
+            elif word.split(b" ")[0] == b"terminal":
+                shape = word.partition(b" ")[2].decode("ascii", "ignore").strip()
+                desk.newTerminal(shape or "1x1")
             else:
                 desk.setEditing(not desk.editing)
 
