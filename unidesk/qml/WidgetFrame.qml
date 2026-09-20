@@ -20,7 +20,7 @@ Item {
     ,
         mixer: "Mixer", notes: "Notes", timer: "Timer", launcher: "Launcher", games: "Games", league: "League",
         countdown: "Countdown", slideshow: "Slideshow", quote: "Quote", dev: "Dev", devices: "Devices",
-        xd: "Xd"
+        xd: "Xd", ssh: "Ssh", bucket: "Bucket"
     })
 
     property bool dragging: false
@@ -73,6 +73,20 @@ Item {
     onWidthChanged: geometryMoved()
     onHeightChanged: geometryMoved()
 
+    // Kept to one virtual desktop, if it was asked to be.
+    //
+    // Shown anyway while arranging - a widget you cannot see is a widget you
+    // cannot put back - and shown when Windows will not say which desktop is
+    // in front, because a widget that has quietly vanished is worse than one
+    // in the wrong place.
+    readonly property string onDesktop: String((frame.spec.options || {}).desktop || "")
+    readonly property bool onThisDesktop:
+        frame.onDesktop === "" || frame.onDesktop === "all" || Desk.editing
+        || Desktops.current === 0 || String(Desktops.current) === frame.onDesktop
+
+    visible: onThisDesktop
+    onVisibleChanged: geometryMoved()   // the window is clipped to what shows
+
     // Left out of the lock screen picture: Windows draws its own clock there,
     // so ours would only be a second one showing when the picture was painted.
     // It is one frame, and the widget is back before anybody sees the desk.
@@ -94,7 +108,11 @@ Item {
             source: frame.types[frame.spec.type] ? "widgets/" + frame.types[frame.spec.type] + "Widget.qml" : ""
             onLoaded: {
                 item.options = Qt.binding(() => frame.spec.options || {});
-                if (item.hasOwnProperty("widgetId")) item.widgetId = Qt.binding(() => frame.widgetId);
+                // Checked by asking for the property rather than with
+                // hasOwnProperty: a property a QML type declares is not
+                // always its own, so widgets that wanted their id were
+                // quietly never given one.
+                if (item.widgetId !== undefined) item.widgetId = Qt.binding(() => frame.widgetId);
             }
         }
 

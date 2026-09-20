@@ -63,6 +63,18 @@ Card {
                 onChanged: (v) => Desk.setOption(panel.spec.id, "screen", Number(v))
             }
 
+            // Kept to one virtual desktop. Only worth offering when there
+            // is more than one to choose between.
+            OptionRow {
+                visible: Desktops.available && Desktops.count > 1
+                field: ({
+                    key: "desktop", label: "Desktop", kind: "choice", def: "all",
+                    options: ["all"].concat(Array.from({ length: Desktops.count }, (_, i) => String(i + 1)))
+                })
+                value: panel.spec && panel.spec.options ? (panel.spec.options.desktop || "all") : "all"
+                onChanged: (v) => Desk.setOption(panel.spec.id, "desktop", v)
+            }
+
             // Which corner, edge or the centre the widget keeps its distance
             // from when the screen size changes. Changing it doesn't move it.
             OptionRow {

@@ -15,3 +15,11 @@ numpy>=1.26
 websocket-client>=1.7
 # and what a camera is captured with
 opencv-python-headless>=4.10
+# the terminal widget: the connection, and the screen it paints into
+paramiko>=3.4
+pyte>=0.8
+# the storage widget, which talks to S3 and to anything that imitates it
+boto3>=1.34
+# which virtual desktop is showing; optional, and the widgets show everywhere
+# on a Windows build it cannot read
+pyvda>=0.6

@@ -29,6 +29,21 @@ for package in ("materialyoucolor", "livekit.rtc", "_sounddevice_data", "soundde
     binaries += b
     hiddenimports += h
 
+# The terminal and the storage widget: the ssh client, the screen it paints
+# into, and the S3 client. Optional here as well as at runtime - a machine
+# without one of them still builds, and the widget says what is missing.
+#
+# pyvda is which virtual desktop is showing; without it widgets show on all.
+for package in ("paramiko", "pyte", "boto3", "botocore", "pyvda"):
+    try:
+        d, b, h = collect_all(package)
+    except Exception as e:
+        print(f"[unidesk.spec] {package} not installed, leaving it out: {e}")
+        continue
+    datas += d
+    binaries += b
+    hiddenimports += h
+
 # materialyoucolor's celebi links against numpy's OWN repaired copy of the C++
 # runtime, by the mangled name delvewheel gave it (msvcp140-<hash>.dll). numpy
 # ships that in numpy.libs, which is on the DLL search path only because
@@ -54,6 +69,22 @@ a = Analysis(
     excludes=["tkinter", "unittest", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore", "PySide6.QtCharts", "PySide6.QtMultimedia"],
     noarchive=False,
 )
+# botocore ships a description of all 435 AWS services, and the storage
+# widget speaks to exactly one of them. Keeping only S3's costs nothing and
+# saves seventeen megabytes of a download nobody asked to be bigger.
+KEEP_AWS = ("botocore/data/s3/", "botocore/data/endpoints", "botocore/data/partitions",
+            "botocore/data/_retry", "botocore/data/sdk-default")
+
+
+def _wanted(entry):
+    name = entry[0].replace("\\", "/")
+    if not name.startswith("botocore/data/"):
+        return True
+    return any(name.startswith(keep) for keep in KEEP_AWS)
+
+
+a.datas = [entry for entry in a.datas if _wanted(entry)]
+
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,

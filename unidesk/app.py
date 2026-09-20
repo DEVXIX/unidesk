@@ -23,9 +23,10 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import desktop, layout, sharing
+from . import deskmenu, desktop, layout, sharing
 from .appthemes import AppThemes
 from .config import CONFIG_DIR, CONFIG_FILE, ConfigStore
+from .desktops import Desktops
 from .displays import Displays
 from .dock.provider import Dock
 from .captionbuttons import CaptionButtons
@@ -37,6 +38,7 @@ from .signinaccent import SignInAccent
 from .frames import WindowFrames
 from .search import Search
 from .updater import Updater
+from .providers.buckets import Buckets
 from .providers.clipboard import Clipboard, ClipboardImages
 from .providers.github import GitHub
 from .providers.media import Media
@@ -51,6 +53,7 @@ from .providers.notes import Notes
 from .providers.notifications import Notifications
 from .providers.storage import Storage
 from .providers.system import System
+from .providers.terminal import Terminals
 from .providers.weather import Weather
 from .theme import Theme
 
@@ -80,6 +83,8 @@ NEEDS = {
     "clipboard": {"clipboard"},
     "notifications": {"notifications"},
     "xd": {"xd"},
+    "ssh": {"terminals"},
+    "bucket": {"buckets"},
     "mixer": {"audio"},
     "notes": set(),
     "timer": set(),
@@ -180,6 +185,11 @@ class Desk(QObject):
             if w["type"] == "media" and w["options"].get("lyrics", True):
                 self._providers["media"].want_lyrics = True
             needed |= needs
+        # Watching which virtual desktop is showing costs a call into the
+        # shell three times a second, so it is only done when some widget's
+        # visibility actually depends on the answer.
+        if any(str(w["options"].get("desktop", "")) not in ("", "all") for w in widgets):
+            needed.add("desktops")
         self._needed = needed
         self._run_providers()
         if not initial:
@@ -344,6 +354,16 @@ class Desk(QObject):
     def addWidget(self, widget_type: str, screen: int) -> str:
         """New widgets start in the middle of the screen they were added on."""
         return self._store.add_widget(widget_type, 0, 0, screen=screen, anchor="center")
+
+    @Slot(result=str)
+    def newTerminal(self) -> str:
+        """Put a terminal on the desk and answer which widget it is.
+
+        Deliberately blank: it opens on its list of saved connections, which
+        is the question anybody opening a terminal is about to answer.
+        """
+        return self._store.add_widget("ssh", 0, 0, screen=1, anchor="center",
+                                      options={"layout": "1x1"})
 
     @Slot(str)
     def removeWidget(self, widget_id: str):
@@ -586,7 +606,7 @@ def main():
                 except (ValueError, psutil.Error):
                     pass
             return 0
-        probe.write(b"edit")
+        probe.write(b"terminal" if "--new-terminal" in sys.argv else b"edit")
         probe.waitForBytesWritten(300)
         return 0
     if "--quit" in sys.argv:
@@ -608,7 +628,7 @@ def main():
         "media": Media(), "system": System(), "weather": Weather(), "github": GitHub(),
         "network": Network(), "storage": Storage(), "clipboard": Clipboard(), "notifications": Notifications(),
         "audio": Audio(), "games": Games(), "league": League(), "devdash": DevDash(), "devices": Devices(),
-        "xd": XD(),
+        "xd": XD(), "terminals": Terminals(), "buckets": Buckets(), "desktops": Desktops(),
     }
     notes = Notes()
     media = providers["media"]
@@ -652,7 +672,8 @@ def main():
                       ("Notifications", providers["notifications"]), ("Dock", dock), ("Search", search), ("Updater", updater),
                       ("Audio", providers["audio"]), ("Games", providers["games"]), ("League", providers["league"]),
                       ("DevDash", providers["devdash"]), ("Devices", providers["devices"]), ("Notes", notes),
-                      ("XD", providers["xd"]), ("Calls", xd_calls)):
+                      ("XD", providers["xd"]), ("Calls", xd_calls), ("Terminals", providers["terminals"]), ("Buckets", providers["buckets"]),
+                      ("Desktops", providers["desktops"])):
         ctx.setContextProperty(name, obj)
     if not displays.attach(engine):
         return 1
@@ -675,6 +696,8 @@ def main():
     tray = QSystemTrayIcon(_tray_icon(theme.c.get("primary", "#ffb1c1")))
     tray.setToolTip("unidesk")
     menu = QMenu()
+    terminal_action = QAction("New terminal")
+    terminal_action.triggered.connect(lambda: desk.newTerminal())
     edit_action = QAction("Edit widgets\tCtrl+Alt+E")
     edit_action.triggered.connect(lambda: desk.setEditing(not desk.editing))
     folder_action = QAction("Open config folder")
@@ -739,11 +762,23 @@ def main():
     import_action.triggered.connect(import_clicked)
     pins_action = QAction("Re-import taskbar pins into the dock")
     pins_action.triggered.connect(dock.importTaskbarPins)
+    # Explorer's own menu, since a right-click on empty desktop never reaches
+    # a window that is clipped to its widgets. See deskmenu.py for where
+    # Windows 11 hides it.
+    desktop_menu_action = QAction("New terminal on desktop right-click", checkable=True,
+                                  checked=deskmenu.installed())
+
+    def desktop_menu_toggled(on: bool):
+        deskmenu.apply(on)
+        if on:
+            tray.showMessage("unidesk", "Right-click the desktop, then “Show more options”.")
+
+    desktop_menu_action.toggled.connect(desktop_menu_toggled)
     startup_action = QAction("Start with Windows", checkable=True, checked=_startup_enabled())
     startup_action.toggled.connect(_set_startup)
     quit_action = QAction("Quit")
     quit_action.triggered.connect(app.quit)
-    for action in (edit_action, None, file_action, folder_action, export_action, import_action, pins_action, startup_action, None, update_action, quit_action):
+    for action in (terminal_action, desktop_menu_action, edit_action, None, file_action, folder_action, export_action, import_action, pins_action, startup_action, None, update_action, quit_action):
         menu.addSeparator() if action is None else menu.addAction(action)
     tray.setContextMenu(menu)
     tray.activated.connect(lambda reason: reason == QSystemTrayIcon.ActivationReason.DoubleClick and desk.setEditing(not desk.editing))
@@ -759,10 +794,13 @@ def main():
         sock = server.nextPendingConnection()
 
         def read():
-            if bytes(sock.readAll()).strip() == b"quit":
+            word = bytes(sock.readAll()).strip()
+            if word == b"quit":
                 sock.write(str(os.getpid()).encode())  # `--quit` waits for this process to end
                 sock.flush()
                 QTimer.singleShot(0, app.quit)
+            elif word == b"terminal":
+                desk.newTerminal()
             else:
                 desk.setEditing(not desk.editing)
 

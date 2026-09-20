@@ -192,7 +192,8 @@ class ConfigStore(QObject):
         if self._edit(change):
             self.changed.emit()
 
-    def add_widget(self, widget_type: str, x: int, y: int, screen: int = 1, anchor: str = layout.DEFAULT) -> str:
+    def add_widget(self, widget_type: str, x: int, y: int, screen: int = 1, anchor: str = layout.DEFAULT,
+                   options: dict | None = None) -> str:
         taken = {w["id"] for w in self.config["widgets"]}
         widget_id, n = widget_type, 2
         while widget_id in taken:
@@ -204,7 +205,10 @@ class ConfigStore(QObject):
                 entry["screen"] = int(screen)
             if layout.normalize(anchor) != layout.DEFAULT:
                 entry["anchor"] = layout.normalize(anchor)
-            doc["widgets"].append({**entry, "x": int(x), "y": int(y), "options": {}})
+            # Options up front rather than set one at a time afterwards: each
+            # write reloads the desk, and a widget appearing three times over
+            # while it is told what it is looks like a fault.
+            doc["widgets"].append({**entry, "x": int(x), "y": int(y), "options": dict(options or {})})
         if self._edit(change):
             self.changed.emit()
         return widget_id

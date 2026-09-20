@@ -83,6 +83,10 @@ Window {
         } else {
             for (var id in frames) {
                 var f = frames[id];
+                // A widget kept to another virtual desktop is not drawn, so
+                // the window must not keep a hole punched for it either -
+                // that hole would swallow clicks meant for the desktop.
+                if (!f.visible) continue;
                 rects.push([f.x - shadowPad, f.y - shadowPad, f.width + shadowPad * 2, f.height + shadowPad * 2]);
             }
             if (banner.visible) rects.push([banner.x, banner.y, banner.width, banner.height]);

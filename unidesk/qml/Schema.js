@@ -27,7 +27,9 @@ var types = [
     { type: "quote",    label: "Quote of the day", icon: "format_quote" },
     { type: "dev",      label: "Code reviews & CI", icon: "merge" },
     { type: "devices",  label: "Batteries",     icon: "battery_full" },
-    { type: "xd",       label: "xD",            icon: "apps" }
+    { type: "xd",       label: "xD",            icon: "apps" },
+    { type: "ssh",      label: "Terminal (SSH)",  icon: "terminal" },
+    { type: "bucket",   label: "S3 / MinIO storage", icon: "cloud" }
 ];
 
 var tones = ["primary", "secondary", "tertiary", "surface"];
@@ -168,6 +170,17 @@ var fields = {
     xd: [
         { key: "width", label: "Width", kind: "slider", min: 280, max: 520, step: 10, def: 340 },
         { key: "height", label: "Height", kind: "slider", min: 280, max: 640, step: 20, def: 400 }
+    ],
+    bucket: [
+        { key: "label", label: "Name", kind: "text", def: "" },
+        { key: "width", label: "Width", kind: "slider", min: 280, max: 640, step: 10, def: 380 },
+        { key: "height", label: "Height", kind: "slider", min: 220, max: 800, step: 20, def: 420 }
+    ],
+    ssh: [
+        { key: "layout", label: "Panes", kind: "choice", options: ["1x1", "2x1", "2x2"], def: "1x1" },
+        { key: "label", label: "Name", kind: "text", def: "" },
+        { key: "width", label: "Width", kind: "slider", min: 320, max: 1200, step: 20, def: 520 },
+        { key: "height", label: "Height", kind: "slider", min: 200, max: 900, step: 20, def: 300 }
     ]
 };
 

@@ -45,6 +45,7 @@ sports_esports emoji_events trending_up trending_down hourglass_top event photo_
 pending cancel task_alt battery_full battery_charging_full bluetooth mouse headset_mic gamepad keyboard
 call call_end mic mic_off ring_volume videocam videocam_off screen_share stop_screen_share
 chevron_right north_east rocket_launch celebration shuffle edit_note format_list_bulleted coffee
+terminal refresh description
 """.split()
 
 

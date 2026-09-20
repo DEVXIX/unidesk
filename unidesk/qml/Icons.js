@@ -130,3 +130,6 @@ var shuffle = "\ue043";
 var edit_note = "\ue745";
 var format_list_bulleted = "\ue241";
 var coffee = "\uefef";
+var terminal = "\ueb8e";
+var refresh = "\ue5d5";
+var description = "\ue873";
