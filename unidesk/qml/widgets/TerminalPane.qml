@@ -29,6 +29,8 @@ Item {
     property string message: ""
     property string screenText: ""
     property bool canSave: false
+    // What it would be called if you just pressed Save.
+    property string suggested: ""
     // "" is the session itself; anything else is a form over the top of it.
     property string sheet: ""
 
@@ -47,10 +49,12 @@ Item {
             phase = Buckets.state(paneId);
             message = Buckets.message(paneId);
             canSave = Buckets.offersSave(paneId);
+            if (canSave) suggested = Buckets.suggestedName(paneId);
         } else {
             phase = Terminals.state(paneId);
             message = Terminals.message(paneId);
             canSave = Terminals.offersSave(paneId);
+            if (canSave) suggested = Terminals.suggestedName(paneId);
         }
         if (live && sheet === "connect") sheet = "";
     }
@@ -301,35 +305,44 @@ Item {
         }
 
         // ---- "save this login?", once it is known to work ------------------
+        //
+        // With somewhere to type what to call it. The address it was reached
+        // at is a fine default and a poor name: a list of four machines all
+        // called by their IP is a list you have to read twice.
         Rectangle {
+            id: saveBar
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 6 }
-            height: 30
+            height: 40
             radius: 8
             color: Theme.c.primaryContainer
             visible: pane.live && pane.canSave && pane.sheet === ""
 
-            UText {
-                anchors { left: parent.left; leftMargin: 8; verticalCenter: parent.verticalCenter }
-                text: "Save this login?"
-                size: 11; weight: Font.Medium
-                color: Theme.c.onPrimaryContainer
+            function keepIt() {
+                var name = naming.text.trim() || pane.suggested;
+                if (name === "") return;
+                if (pane.storage) Buckets.saveConnection(pane.paneId, name);
+                else Terminals.saveConnection(pane.paneId, name);
+                pane.connectionName = name;
+                pane.chose(pane.kind, name);
+                naming.text = "";
+            }
+
+            Field {
+                id: naming
+                objectName: "nameBox"
+                anchors { left: parent.left; leftMargin: 5; right: buttons.left; rightMargin: 5; verticalCenter: parent.verticalCenter }
+                height: 32
+                label: "Save this as"
+                placeholder: pane.suggested
+                onAccepted: saveBar.keepIt()
             }
             Row {
-                anchors { right: parent.right; rightMargin: 6; verticalCenter: parent.verticalCenter }
+                id: buttons
+                anchors { right: parent.right; rightMargin: 5; verticalCenter: parent.verticalCenter }
                 spacing: 4
+                Pill { label: "Save"; filled: true; small: true; onPressed: saveBar.keepIt() }
                 Pill {
-                    label: "Save"; filled: true; small: true
-                    onPressed: {
-                        var name = pane.storage ? Buckets.suggestedName(pane.paneId)
-                                                : Terminals.suggestedName(pane.paneId);
-                        if (pane.storage) Buckets.saveConnection(pane.paneId, name);
-                        else Terminals.saveConnection(pane.paneId, name);
-                        pane.connectionName = name;
-                        pane.chose(pane.kind, name);
-                    }
-                }
-                Pill {
-                    label: "Not now"; small: true
+                    label: "No"; small: true
                     onPressed: pane.storage ? Buckets.declineSave(pane.paneId)
                                             : Terminals.declineSave(pane.paneId)
                 }

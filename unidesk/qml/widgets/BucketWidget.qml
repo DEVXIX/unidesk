@@ -26,6 +26,7 @@ Card {
     property string message: ""
     property var entries: []
     property bool canSave: false
+    property string suggested: ""
     property string sheet: ""
 
     function ident() { return widgetId !== "" ? widgetId : ""; }
@@ -35,6 +36,7 @@ Card {
         message = Buckets.message(ident());
         entries = Buckets.entries(ident());
         canSave = Buckets.offersSave(ident());
+        if (canSave) suggested = Buckets.suggestedName(ident());
         if (phase === "ready" && sheet === "connect") sheet = "";
     }
     function connectSaved(name, announce) {
@@ -217,32 +219,38 @@ Card {
         }
 
         // "Save these keys?", once they are known to work.
+        // With somewhere to type what to call it: the endpoint it was reached
+        // at is a fine default and a poor name.
         Rectangle {
             id: saveBar
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            height: 30
+            height: 40
             radius: 8
             color: Theme.c.primaryContainer
             visible: root.canSave && root.sheet === ""
 
-            UText {
-                anchors { left: parent.left; leftMargin: 8; verticalCenter: parent.verticalCenter }
-                text: "Save this connection?"
-                size: 11; weight: Font.Medium
-                color: Theme.c.onPrimaryContainer
+            function keepIt() {
+                var name = naming.text.trim() || root.suggested;
+                if (name === "") return;
+                Buckets.saveConnection(root.ident(), name);
+                Desk.setOption(root.widgetId, "connection", name);
+                naming.text = "";
+            }
+
+            Field {
+                id: naming
+                anchors { left: parent.left; leftMargin: 5; right: buttons.left; rightMargin: 5; verticalCenter: parent.verticalCenter }
+                height: 32
+                label: "Save this as"
+                placeholder: root.suggested
+                onAccepted: saveBar.keepIt()
             }
             Row {
-                anchors { right: parent.right; rightMargin: 6; verticalCenter: parent.verticalCenter }
+                id: buttons
+                anchors { right: parent.right; rightMargin: 5; verticalCenter: parent.verticalCenter }
                 spacing: 4
-                Pill {
-                    label: "Save"; filled: true; small: true
-                    onPressed: {
-                        var name = Buckets.suggestedName(root.ident());
-                        Buckets.saveConnection(root.ident(), name);
-                        Desk.setOption(root.widgetId, "connection", name);
-                    }
-                }
-                Pill { label: "Not now"; small: true; onPressed: Buckets.declineSave(root.ident()) }
+                Pill { label: "Save"; filled: true; small: true; onPressed: saveBar.keepIt() }
+                Pill { label: "No"; small: true; onPressed: Buckets.declineSave(root.ident()) }
             }
         }
     }
