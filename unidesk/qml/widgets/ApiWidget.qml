@@ -578,7 +578,10 @@ Card {
                     required property var modelData
                     width: saved.width
                     height: 28
-                    color: pick.containsMouse ? Theme.c.surfaceContainerHigh : "transparent"
+                    color: rowHover.hovered ? Theme.c.surfaceContainerHigh : "transparent"
+                    // Watched over the whole row: an area that stops before
+                    // the button takes the button away as you reach for it.
+                    HoverHandler { id: rowHover }
                     UText {
                         anchors { left: parent.left; leftMargin: 10; right: drop.left; verticalCenter: parent.verticalCenter }
                         text: (modelData.method || "GET") + "  " + modelData.name
@@ -588,7 +591,7 @@ Card {
                     IconButton {
                         id: drop
                         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                        visible: pick.containsMouse
+                        visible: rowHover.hovered
                         icon: Icons.delete_; size: 20; iconSize: 11
                         iconColor: Theme.c.onSurfaceVariant
                         onClicked: Api.forget(modelData.name)

@@ -387,7 +387,13 @@ Item {
                         width: ListView.view.width
                         height: renaming ? 36 : 28
                         radius: 7
-                        color: hover.containsMouse || renaming ? Theme.c.surfaceContainerHigh : "transparent"
+                        color: rowHover.hovered || renaming ? Theme.c.surfaceContainerHigh : "transparent"
+
+                        // Hover is watched over the WHOLE row, buttons and
+                        // all. A mouse area that stops short of them means
+                        // moving onto a button un-hovers the row and takes the
+                        // button away from under the pointer.
+                        HoverHandler { id: rowHover }
 
                         function callItSomethingElse(called) {
                             var moved = row.modelData.kind === "s3"
@@ -431,7 +437,7 @@ Item {
                             anchors { right: parent.right; rightMargin: 2; verticalCenter: parent.verticalCenter }
                             spacing: 0
                             IconButton {
-                                visible: hover.containsMouse || row.renaming
+                                visible: rowHover.hovered || row.renaming
                                 icon: row.renaming ? Icons.check : Icons.edit_note
                                 size: 20; iconSize: 12
                                 iconColor: row.renaming ? Theme.c.primary : Theme.c.onSurfaceVariant
@@ -441,7 +447,7 @@ Item {
                                 }
                             }
                             IconButton {
-                                visible: hover.containsMouse && !row.renaming
+                                visible: rowHover.hovered && !row.renaming
                                 icon: Icons.delete_; size: 20; iconSize: 11
                                 iconColor: Theme.c.onSurfaceVariant
                                 onClicked: row.modelData.kind === "s3" ? Buckets.forget(row.modelData.name)
