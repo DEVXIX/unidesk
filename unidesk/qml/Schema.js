@@ -29,7 +29,8 @@ var types = [
     { type: "devices",  label: "Batteries",     icon: "battery_full" },
     { type: "xd",       label: "xD",            icon: "apps" },
     { type: "ssh",      label: "Terminal (SSH)",  icon: "terminal" },
-    { type: "bucket",   label: "S3 / MinIO storage", icon: "cloud" }
+    { type: "bucket",   label: "S3 / MinIO storage", icon: "cloud" },
+    { type: "api",      label: "API request",    icon: "language" }
 ];
 
 var tones = ["primary", "secondary", "tertiary", "surface"];
@@ -170,6 +171,11 @@ var fields = {
     xd: [
         { key: "width", label: "Width", kind: "slider", min: 280, max: 520, step: 10, def: 340 },
         { key: "height", label: "Height", kind: "slider", min: 280, max: 640, step: 20, def: 400 }
+    ],
+    api: [
+        { key: "label", label: "Name", kind: "text", def: "" },
+        { key: "width", label: "Width", kind: "slider", min: 320, max: 900, step: 20, def: 460 },
+        { key: "height", label: "Height", kind: "slider", min: 240, max: 900, step: 20, def: 420 }
     ],
     bucket: [
         { key: "label", label: "Name", kind: "text", def: "" },

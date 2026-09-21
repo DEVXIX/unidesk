@@ -42,6 +42,7 @@ from .providers.buckets import Buckets
 from .providers.clipboard import Clipboard, ClipboardImages
 from .providers.github import GitHub
 from .providers.media import Media
+from .providers.api import Api
 from .providers.audio import Audio
 from .providers.devdash import DevDash
 from .providers.devices import Devices
@@ -85,6 +86,7 @@ NEEDS = {
     "xd": {"xd"},
     "ssh": {"terminals"},
     "bucket": {"buckets"},
+    "api": {"api"},
     "mixer": {"audio"},
     "notes": set(),
     "timer": set(),
@@ -354,6 +356,12 @@ class Desk(QObject):
     def addWidget(self, widget_type: str, screen: int) -> str:
         """New widgets start in the middle of the screen they were added on."""
         return self._store.add_widget(widget_type, 0, 0, screen=screen, anchor="center")
+
+    @Slot(str, "QVariantMap")
+    def setOptions(self, widget_id: str, values):
+        """Several of a widget's options in one write, for the same reason
+        setSize exists: each write reloads the whole desk."""
+        self._store.set_options(widget_id, values)
 
     @Slot(str, int, int)
     def setSize(self, widget_id: str, width: int, height: int):
@@ -648,7 +656,7 @@ def main():
         "media": Media(), "system": System(), "weather": Weather(), "github": GitHub(),
         "network": Network(), "storage": Storage(), "clipboard": Clipboard(), "notifications": Notifications(),
         "audio": Audio(), "games": Games(), "league": League(), "devdash": DevDash(), "devices": Devices(),
-        "xd": XD(), "terminals": Terminals(), "buckets": Buckets(), "desktops": Desktops(),
+        "xd": XD(), "terminals": Terminals(), "buckets": Buckets(), "api": Api(), "desktops": Desktops(),
     }
     notes = Notes()
     media = providers["media"]
@@ -692,7 +700,7 @@ def main():
                       ("Notifications", providers["notifications"]), ("Dock", dock), ("Search", search), ("Updater", updater),
                       ("Audio", providers["audio"]), ("Games", providers["games"]), ("League", providers["league"]),
                       ("DevDash", providers["devdash"]), ("Devices", providers["devices"]), ("Notes", notes),
-                      ("XD", providers["xd"]), ("Calls", xd_calls), ("Terminals", providers["terminals"]), ("Buckets", providers["buckets"]),
+                      ("XD", providers["xd"]), ("Calls", xd_calls), ("Terminals", providers["terminals"]), ("Buckets", providers["buckets"]), ("Api", providers["api"]),
                       ("Desktops", providers["desktops"])):
         ctx.setContextProperty(name, obj)
     if not displays.attach(engine):
