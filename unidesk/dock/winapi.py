@@ -177,6 +177,10 @@ def foreground() -> int:
     return int(user32.GetForegroundWindow() or 0)
 
 
+user32.SwitchToThisWindow.argtypes = [HWND, wintypes.BOOL]
+user32.SwitchToThisWindow.restype = None
+
+
 def activate(hwnd: int):
     h = HWND(hwnd)
     if user32.IsIconic(h):
@@ -193,6 +197,19 @@ def activate(hwnd: int):
     finally:
         if attached:
             user32.AttachThreadInput(me, fg_thread, False)
+
+    # Anything running as administrator sits above us, and Windows will not
+    # let a program that is not elevated reach into one that is: attaching to
+    # its input queue is refused, and the messages that bring a window forward
+    # are dropped on the way. Clicking such a window on the dock did nothing
+    # at all, and the only way to it was Alt+Tab.
+    #
+    # SwitchToThisWindow is what Alt+Tab itself uses, and it is handled by the
+    # window manager rather than sent to the window - so it crosses that line.
+    # Tried only when the ordinary route has already failed, because it also
+    # ignores the animation settings and is abrupt when it is not needed.
+    if user32.GetForegroundWindow() != hwnd:
+        user32.SwitchToThisWindow(h, True)
 
 
 def minimize(hwnd: int):
