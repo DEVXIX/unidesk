@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
+from .. import __version__
 from ..config import from_qml
 from ..vault import Vault
 
@@ -32,6 +33,14 @@ TIMEOUT = 30
 # A response bigger than this is not going in a widget; enough of it is.
 MOST = 400_000
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
+# What this calls itself on the wire.
+#
+# urllib says "Python-urllib/3.12" if nobody tells it otherwise, and a great
+# many sites refuse that outright - Cloudflare answers it with 403 and error
+# code 1010, which says nothing about the request and everything about who
+# asked. Saying who we actually are is enough; there is no need to pretend to
+# be a browser, and anything typed in the Headers box still wins.
+AGENT = f"unidesk/{__version__}"
 
 
 def parse_headers(text: str) -> list[tuple[str, str]]:
@@ -155,6 +164,8 @@ def send_request(request: dict) -> dict:
     # A header typed by hand wins: it is the more deliberate of the two.
     if data is not None and content_type and "content-type" not in names:
         headers.append(("Content-Type", content_type))
+    if "user-agent" not in names:
+        headers.append(("User-Agent", AGENT))
 
     prepared = urllib.request.Request(url, data=data, method=method)
     for name, value in headers:
