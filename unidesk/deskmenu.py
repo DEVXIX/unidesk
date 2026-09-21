@@ -20,14 +20,15 @@ import winreg
 from pathlib import Path
 
 KEY = r"Software\Classes\Directory\Background\shell\unidesk.terminal"
-LABEL = "New terminal (unidesk)"
+LABEL = "New in unidesk"
 
 
-# The three shapes the menu offers, in the order they appear. The numbers in
-# front are only there because Explorer lists subcommands alphabetically.
-SHAPES = (("01one", "One pane", "1x1"),
-          ("02two", "Two panes", "2x1"),
-          ("03four", "Four panes", "2x2"))
+# Everything the desktop menu can open, in the order it appears. The numbers
+# in front are only there because Explorer lists subcommands alphabetically.
+ENTRIES = (("01terminal", "Terminal", ("--new-terminal", "1x1")),
+           ("02terminal2", "Terminal, two panes", ("--new-terminal", "2x1")),
+           ("03terminal4", "Terminal, four panes", ("--new-terminal", "2x2")),
+           ("04api", "API request", ("--new-api",)))
 
 
 def icon() -> str:
@@ -45,16 +46,17 @@ def icon() -> str:
     return str(exe)
 
 
-def launcher(shape: str = "1x1") -> str:
-    """The command line that opens a terminal, however unidesk is installed."""
+def launcher(*arguments: str) -> str:
+    """The command line that opens one of these, however unidesk is installed."""
+    asked = " ".join(arguments)
     exe = Path(sys.executable)
     if exe.name.lower() in ("python.exe", "pythonw.exe"):
         # Running from a checkout. The entry script by full path, not
         # `-m unidesk`, because Explorer will not be standing in the project
         # directory when it runs this.
         script = Path(__file__).resolve().parent.parent / "unidesk.pyw"
-        return f'"{exe.with_name("pythonw.exe")}" "{script}" --new-terminal {shape}'
-    return f'"{exe}" --new-terminal {shape}'
+        return f'"{exe.with_name("pythonw.exe")}" "{script}" {asked}'
+    return f'"{exe}" {asked}'
 
 
 def installed() -> bool:
@@ -68,35 +70,53 @@ def installed() -> bool:
 def install():
     """Put the entry in the desktop's menu, pointing at this copy.
 
-    A cascading one: the parent says nothing on its own, and the three sizes
-    hang off it. That is what SubCommands means to Explorer - an empty value
+    A cascading one: the parent says nothing on its own and everything unidesk
+    can open hangs off it. That is what SubCommands means to Explorer - an empty value
     tells it to look for a `shell` key underneath and build a submenu from
     whatever it finds, in alphabetical order.
     """
+    # Cleared first, so an entry that used to be here and is not any more does
+    # not sit in the menu pointing at nothing.
+    remove()
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, KEY) as key:
         winreg.SetValueEx(key, "MUIVerb", 0, winreg.REG_SZ, LABEL)
         winreg.SetValueEx(key, "SubCommands", 0, winreg.REG_SZ, "")
         # The icon Explorer shows beside it, taken from the running program.
         winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon())
-    for folder, label, shape in SHAPES:
+    for folder, label, arguments in ENTRIES:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{KEY}\shell\{folder}") as entry:
             winreg.SetValueEx(entry, "MUIVerb", 0, winreg.REG_SZ, label)
             winreg.SetValueEx(entry, "Icon", 0, winreg.REG_SZ, icon())
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{KEY}\shell\{folder}\command") as command:
-            winreg.SetValueEx(command, None, 0, winreg.REG_SZ, launcher(shape))
+            winreg.SetValueEx(command, None, 0, winreg.REG_SZ, launcher(*arguments))
 
 
 def remove():
-    # Deepest first: a key with anything under it cannot be deleted.
-    paths = []
-    for folder, _, _ in SHAPES:
-        paths += [rf"{KEY}\shell\{folder}\command", rf"{KEY}\shell\{folder}"]
-    paths += [KEY + r"\shell", KEY + r"\command", KEY]
-    for path in paths:
+    """Take the whole entry away, whatever is under it.
+
+    Enumerated rather than worked out from the list above: an entry that used
+    to exist and no longer does is exactly the one that would be left behind,
+    and Windows will not delete a key that still has anything beneath it.
+    """
+    def wipe(path: str):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as key:
+                children = []
+                while True:
+                    try:
+                        children.append(winreg.EnumKey(key, len(children)))
+                    except OSError:
+                        break
+        except OSError:
+            return
+        for child in children:
+            wipe(path + "\\" + child)
         try:
             winreg.DeleteKey(winreg.HKEY_CURRENT_USER, path)
         except OSError:
             pass
+
+    wipe(KEY)
 
 
 # Windows 11 shows a menu of its own on a right-click, and only lists things

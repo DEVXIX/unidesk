@@ -369,6 +369,24 @@ class Desk(QObject):
         two rewrites of the file and two reloads of the whole desk."""
         self._store.set_options(widget_id, {"width": int(width), "height": int(height)})
 
+    def _spawn(self, widget_type: str, options: dict) -> str:
+        """A new widget in the middle of the screen, kept to the desktop it
+        was made on where there is more than one.
+
+        A thing you opened somewhere else turning up over whatever you
+        switched to is the complaint people have about desktop widgets, and a
+        window would never do it.
+        """
+        current, count = self._providers["desktops"].now()
+        if current > 0 and count > 1:
+            options = dict(options, desktop=str(current))
+        return self._store.add_widget(widget_type, 0, 0, screen=1, anchor="center", options=options)
+
+    @Slot(result=str)
+    def newApi(self) -> str:
+        """An API request on the desk, blank and ready to be typed into."""
+        return self._spawn("api", {})
+
     @Slot(result=str)
     @Slot(str, result=str)
     def newTerminal(self, layout: str = "1x1") -> str:
@@ -376,17 +394,8 @@ class Desk(QObject):
 
         It opens blank, on its list of saved connections, because that is the
         question anybody opening a terminal is about to answer.
-
-        On a machine with more than one virtual desktop it is kept to the one
-        it was made on. A terminal you opened somewhere else turning up over
-        whatever you switched to is the thing people complain about, and a
-        window would never do it.
         """
-        options = {"layout": layout if layout in ("1x1", "2x1", "2x2") else "1x1"}
-        current, count = self._providers["desktops"].now()
-        if current > 0 and count > 1:
-            options["desktop"] = str(current)
-        return self._store.add_widget("ssh", 0, 0, screen=1, anchor="center", options=options)
+        return self._spawn("ssh", {"layout": layout if layout in ("1x1", "2x1", "2x2") else "1x1"})
 
     @Slot(str)
     def removeWidget(self, widget_id: str):
@@ -629,7 +638,9 @@ def main():
                 except (ValueError, psutil.Error):
                     pass
             return 0
-        if "--new-terminal" in sys.argv:
+        if "--new-api" in sys.argv:
+            probe.write(b"api")
+        elif "--new-terminal" in sys.argv:
             after = sys.argv[sys.argv.index("--new-terminal") + 1:]
             shape = after[0] if after and not after[0].startswith("--") else "1x1"
             probe.write(b"terminal " + shape.encode("ascii", "ignore"))
@@ -724,6 +735,8 @@ def main():
     tray = QSystemTrayIcon(_tray_icon(theme.c.get("primary", "#ffb1c1")))
     tray.setToolTip("unidesk")
     menu = QMenu()
+    api_action = QAction("New API request")
+    api_action.triggered.connect(lambda: desk.newApi())
     terminal_menu = QMenu("New terminal")
     for label, shape in (("One pane", "1x1"), ("Two panes", "2x1"), ("Four panes", "2x2")):
         action = QAction(label, terminal_menu)
@@ -823,7 +836,7 @@ def main():
     quit_action = QAction("Quit")
     quit_action.triggered.connect(app.quit)
     menu.addMenu(terminal_menu)
-    for action in (desktop_menu_action, classic_action, edit_action, None, file_action, folder_action, export_action, import_action, pins_action, startup_action, None, update_action, quit_action):
+    for action in (api_action, desktop_menu_action, classic_action, edit_action, None, file_action, folder_action, export_action, import_action, pins_action, startup_action, None, update_action, quit_action):
         menu.addSeparator() if action is None else menu.addAction(action)
     tray.setContextMenu(menu)
     tray.activated.connect(lambda reason: reason == QSystemTrayIcon.ActivationReason.DoubleClick and desk.setEditing(not desk.editing))
@@ -844,6 +857,8 @@ def main():
                 sock.write(str(os.getpid()).encode())  # `--quit` waits for this process to end
                 sock.flush()
                 QTimer.singleShot(0, app.quit)
+            elif word == b"api":
+                desk.newApi()
             elif word.split(b" ")[0] == b"terminal":
                 shape = word.partition(b" ")[2].decode("ascii", "ignore").strip()
                 desk.newTerminal(shape or "1x1")
