@@ -532,6 +532,10 @@ Card {
                 wasHeight = root.height;
                 root.heldWidth = wasWidth;
                 root.heldHeight = wasHeight;
+                // While this is set the desk stops clipping itself to the
+                // widgets, so what is being dragged is not cut off at the
+                // size it used to be.
+                if (root.frame) root.frame.sizing = true;
             }
             onPositionChanged: (e) => {
                 if (!pressed) return;
@@ -541,6 +545,7 @@ Card {
                 root.heldHeight = Math.max(280, wasHeight + (now.y - from.y) / scale);
             }
             onReleased: {
+                if (root.frame) root.frame.sizing = false;
                 if (root.heldWidth <= 0) return;
                 Desk.setSize(root.widgetId, Math.round(root.heldWidth), Math.round(root.heldHeight));
                 root.heldWidth = 0;

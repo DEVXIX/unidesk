@@ -25,6 +25,11 @@ Item {
 
     property bool dragging: false
     property bool resizing: false
+    // A widget resizing ITSELF by its own corner, which is not the same as
+    // edit mode's resize: that one scales the whole widget and switches the
+    // frame over to liveScale, and this one changes what the widget asked to
+    // be. Kept apart so the two cannot be mistaken for each other.
+    property bool sizing: false
     property real dragX: 0
     property real dragY: 0
     property real liveScale: 1

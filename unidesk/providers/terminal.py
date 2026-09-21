@@ -515,6 +515,14 @@ class Terminals(QObject):
     def saved(self) -> list:
         return self._vault.listing("ssh")
 
+    @Slot(str, str, result=bool)
+    def rename(self, name: str, called: str) -> bool:
+        """Call a saved connection something else."""
+        if self._vault.rename(name, called):
+            self.savedChanged.emit()
+            return True
+        return False
+
     @Slot(str)
     def forget(self, name: str):
         self._vault.forget(name)

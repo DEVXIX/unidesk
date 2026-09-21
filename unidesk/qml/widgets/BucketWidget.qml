@@ -269,35 +269,70 @@ Card {
                     clip: true
                     model: Buckets.saved
                     delegate: Rectangle {
+                        id: row
                         required property var modelData
+                        property bool renaming: false
                         width: ListView.view.width
-                        height: 30
+                        height: renaming ? 36 : 30
                         radius: 7
-                        color: pick.containsMouse ? Theme.c.surfaceContainerHigh : "transparent"
+                        color: pick.containsMouse || renaming ? Theme.c.surfaceContainerHigh : "transparent"
+
+                        function callItSomethingElse(called) {
+                            if (Buckets.rename(row.modelData.name, called)
+                                && root.connectionName === row.modelData.name) {
+                                Desk.setOption(root.widgetId, "connection", called);
+                            }
+                            row.renaming = false;
+                        }
+
                         Column {
-                            anchors { left: parent.left; leftMargin: 8; right: drop.left; verticalCenter: parent.verticalCenter }
-                            UText { text: modelData.name; size: 12; weight: Font.Medium; width: parent.width; elide: Text.ElideRight }
+                            anchors { left: parent.left; leftMargin: 8; right: tools.left; rightMargin: 4; verticalCenter: parent.verticalCenter }
+                            visible: !row.renaming
+                            UText { text: row.modelData.name; size: 12; weight: Font.Medium; width: parent.width; elide: Text.ElideRight }
                             UText {
-                                text: modelData.endpoint || "Amazon S3"
+                                text: row.modelData.endpoint || "Amazon S3"
                                 size: 9.5; color: Theme.c.onSurfaceVariant
                                 width: parent.width; elide: Text.ElideMiddle
                             }
                         }
-                        IconButton {
-                            id: drop
-                            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                            visible: pick.containsMouse
-                            icon: Icons.delete_; size: 20; iconSize: 11
-                            iconColor: Theme.c.onSurfaceVariant
-                            onClicked: Buckets.forget(modelData.name)
+                        Field {
+                            id: newName
+                            anchors { left: parent.left; leftMargin: 6; right: tools.left; rightMargin: 4; verticalCenter: parent.verticalCenter }
+                            height: 30
+                            visible: row.renaming
+                            label: "Call it"
+                            text: row.modelData.name
+                            onAccepted: row.callItSomethingElse(text)
+                        }
+                        Row {
+                            id: tools
+                            anchors { right: parent.right; rightMargin: 2; verticalCenter: parent.verticalCenter }
+                            spacing: 0
+                            IconButton {
+                                visible: pick.containsMouse || row.renaming
+                                icon: row.renaming ? Icons.check : Icons.edit_note
+                                size: 20; iconSize: 12
+                                iconColor: row.renaming ? Theme.c.primary : Theme.c.onSurfaceVariant
+                                onClicked: {
+                                    if (row.renaming) row.callItSomethingElse(newName.text);
+                                    else { newName.text = row.modelData.name; row.renaming = true; }
+                                }
+                            }
+                            IconButton {
+                                visible: pick.containsMouse && !row.renaming
+                                icon: Icons.delete_; size: 20; iconSize: 11
+                                iconColor: Theme.c.onSurfaceVariant
+                                onClicked: Buckets.forget(row.modelData.name)
+                            }
                         }
                         MouseArea {
                             id: pick
                             anchors.fill: parent
-                            anchors.rightMargin: 22
+                            anchors.rightMargin: 44
                             hoverEnabled: true
+                            enabled: !row.renaming
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.connectSaved(modelData.name, true)
+                            onClicked: root.connectSaved(row.modelData.name, true)
                         }
                     }
                 }

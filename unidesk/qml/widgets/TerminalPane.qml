@@ -380,40 +380,82 @@ Item {
                     clip: true
                     model: pane.everything
                     delegate: Rectangle {
+                        id: row
                         required property var modelData
+                        // Renaming happens in place: the row becomes the box.
+                        property bool renaming: false
                         width: ListView.view.width
-                        height: 28
+                        height: renaming ? 36 : 28
                         radius: 7
-                        color: hover.containsMouse ? Theme.c.surfaceContainerHigh : "transparent"
+                        color: hover.containsMouse || renaming ? Theme.c.surfaceContainerHigh : "transparent"
+
+                        function callItSomethingElse(called) {
+                            var moved = row.modelData.kind === "s3"
+                                ? Buckets.rename(row.modelData.name, called)
+                                : Terminals.rename(row.modelData.name, called);
+                            // The pane is pointed at it by name, so it has to
+                            // learn the new one or it reconnects to nothing.
+                            if (moved && pane.connectionName === row.modelData.name) {
+                                pane.connectionName = called;
+                                pane.chose(row.modelData.kind, called);
+                            }
+                            row.renaming = false;
+                        }
+
                         MIcon {
                             id: what
                             anchors { left: parent.left; leftMargin: 7; verticalCenter: parent.verticalCenter }
-                            icon: modelData.kind === "s3" ? Icons.cloud : Icons.terminal
+                            visible: !row.renaming
+                            icon: row.modelData.kind === "s3" ? Icons.cloud : Icons.terminal
                             size: 13
                             color: Theme.c.primary
                         }
                         UText {
-                            anchors { left: what.right; leftMargin: 7; right: forget.left; verticalCenter: parent.verticalCenter }
-                            text: modelData.name + "  " + modelData.where
+                            anchors { left: what.right; leftMargin: 7; right: tools.left; rightMargin: 4; verticalCenter: parent.verticalCenter }
+                            visible: !row.renaming
+                            text: row.modelData.name + "  " + row.modelData.where
                             size: 11
                             elide: Text.ElideRight
                         }
-                        IconButton {
-                            id: forget
-                            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                            visible: hover.containsMouse
-                            icon: Icons.delete_; size: 20; iconSize: 11
-                            iconColor: Theme.c.onSurfaceVariant
-                            onClicked: modelData.kind === "s3" ? Buckets.forget(modelData.name)
-                                                               : Terminals.forget(modelData.name)
+                        Field {
+                            id: newName
+                            anchors { left: parent.left; leftMargin: 6; right: tools.left; rightMargin: 4; verticalCenter: parent.verticalCenter }
+                            height: 30
+                            visible: row.renaming
+                            label: "Call it"
+                            text: row.modelData.name
+                            onAccepted: row.callItSomethingElse(text)
+                        }
+                        Row {
+                            id: tools
+                            anchors { right: parent.right; rightMargin: 2; verticalCenter: parent.verticalCenter }
+                            spacing: 0
+                            IconButton {
+                                visible: hover.containsMouse || row.renaming
+                                icon: row.renaming ? Icons.check : Icons.edit_note
+                                size: 20; iconSize: 12
+                                iconColor: row.renaming ? Theme.c.primary : Theme.c.onSurfaceVariant
+                                onClicked: {
+                                    if (row.renaming) row.callItSomethingElse(newName.text);
+                                    else { newName.text = row.modelData.name; row.renaming = true; }
+                                }
+                            }
+                            IconButton {
+                                visible: hover.containsMouse && !row.renaming
+                                icon: Icons.delete_; size: 20; iconSize: 11
+                                iconColor: Theme.c.onSurfaceVariant
+                                onClicked: row.modelData.kind === "s3" ? Buckets.forget(row.modelData.name)
+                                                                       : Terminals.forget(row.modelData.name)
+                            }
                         }
                         MouseArea {
                             id: hover
                             anchors.fill: parent
-                            anchors.rightMargin: 22
+                            anchors.rightMargin: 44
                             hoverEnabled: true
+                            enabled: !row.renaming
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: pane.connectSaved(modelData.kind, modelData.name, true)
+                            onClicked: pane.connectSaved(row.modelData.kind, row.modelData.name, true)
                         }
                     }
                 }

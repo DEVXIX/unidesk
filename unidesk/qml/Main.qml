@@ -50,6 +50,11 @@ Window {
             } else {
                 f = frameComponent.createObject(layer, { spec: spec, slot: desk.slot });
                 f.geometryMoved.connect(maskTimer.restart);
+                // Starting and finishing are not "some geometry changed" -
+                // they have to take effect now, not after the debounce that
+                // a drag keeps resetting.
+                f.draggingChanged.connect(desk.updateMask);
+                f.sizingChanged.connect(desk.updateMask);
                 frames[spec.id] = f;
             }
         }
@@ -75,10 +80,23 @@ Window {
         settingsOpen = false;
     }
 
+    // Is something being dragged or resized right now?
+    function handling() {
+        for (var id in frames) if (frames[id].dragging || frames[id].sizing) return true;
+        return false;
+    }
+
     // Clip the window to the widgets (plus room for shadows and the banner).
+    //
+    // Not while one is being moved or resized. The shape is worked out on a
+    // timer that restarts every time anything moves, so during a drag it
+    // never fires at all - and the window stays cut to where the widget used
+    // to be, which looks like the widget itself is being chopped up and put
+    // back a few times a second. The whole window is open for the length of
+    // the drag instead, and clipped again the moment it ends.
     function updateMask() {
         var rects = [];
-        if (Desk.editing) {
+        if (Desk.editing || handling()) {
             rects.push([0, 0, width, height]);
         } else {
             for (var id in frames) {

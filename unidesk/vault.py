@@ -142,6 +142,22 @@ class Vault:
         self._write()
         return name
 
+    def rename(self, name: str, called: str) -> bool:
+        """Call one of these something else, keeping what it knows.
+
+        The secrets are moved across still encrypted - they are never unpacked
+        to be carried from one name to the other.
+        """
+        called = str(called or "").strip()
+        entry = self.find(name)
+        if not entry or not called or called == name:
+            return False
+        if self.find(called):
+            return False        # something is already called that
+        entry["name"] = called
+        self._write()
+        return True
+
     def forget(self, name: str):
         entry = self.find(name)
         if entry:
