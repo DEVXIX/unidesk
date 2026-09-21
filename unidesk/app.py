@@ -613,8 +613,30 @@ def _set_startup(on: bool):
                 pass
 
 
+# Variables that break the programs unidesk starts, and that it has no use
+# for itself. Everything launched from the dock, the search or a widget
+# inherits this process's environment, so one bad value here is one bad value
+# everywhere.
+#
+# ELECTRON_RUN_AS_NODE is the one that matters: any Electron app started with
+# it set runs as a bare Node process and exits immediately, with no window and
+# nothing on the console. Terminals inside editors set it, so a unidesk
+# started from one quietly stops every Electron app on the machine from
+# opening - which looks exactly like those apps being broken.
+POISON = ("ELECTRON_RUN_AS_NODE",)
+
+
+def clean_environment() -> list[str]:
+    """Drop what would break what we launch. Answers what was dropped."""
+    return [name for name in POISON if os.environ.pop(name, None) is not None]
+
+
 def main():
     global _tray_refresh
+
+    dropped = clean_environment()
+    if dropped:
+        print(f"[unidesk] ignoring {', '.join(dropped)} so launched apps still start")
 
     if not os.environ.get("QSG_RHI_BACKEND"):
         QQuickWindow.setGraphicsApi(QSGRendererInterface.GraphicsApi.Direct3D11)
