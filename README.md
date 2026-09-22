@@ -19,6 +19,7 @@ Desktop widgets, a dock and search for Windows 11, in a Material You style. Colo
   - pinned and running apps with unread badges
   - live window previews
   - now playing, a clock and quick settings
+- **Its own Start menu:** the Windows 11 layout - a search box, pinned apps in pages, what you opened lately, your name and the power button - drawn in unidesk's theme instead of Windows'. Right-click a tile to pin, unpin or move it to the front. `dock: {start: windows}` in config.yaml goes back to Windows' own menu, and `start: {name: ...}` sets what it calls you.
 - **Every monitor:** widgets and a dock on each screen. Drag a widget onto another screen to move it there. Widgets keep their distance from the nearest edge, so layouts fit wide and ultrawide monitors.
 - **Matching windows:** other apps' title bars and borders take the same colours (Windows 11). Optionally, VS Code and Windows Terminal are themed too (title bar, menus, tabs, status bar and scroll bars). With the [Windhawk mod](windhawk/README.md), so are classic apps' menus, scroll bars, status bars and toolbars.
 - **Search** (Alt+Space): apps, maths, Windows settings, files and the web.

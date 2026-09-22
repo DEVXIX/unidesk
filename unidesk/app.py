@@ -37,6 +37,7 @@ from .lockscreen import LockScreen
 from .signinaccent import SignInAccent
 from .frames import WindowFrames
 from .search import Search
+from .start import Start
 from .updater import Updater
 from .providers.buckets import Buckets
 from .providers.clipboard import Clipboard, ClipboardImages
@@ -660,7 +661,9 @@ def main():
                 except (ValueError, psutil.Error):
                     pass
             return 0
-        if "--new-api" in sys.argv:
+        if "--start" in sys.argv:
+            probe.write(b"start")
+        elif "--new-api" in sys.argv:
             probe.write(b"api")
         elif "--new-terminal" in sys.argv:
             after = sys.argv[sys.argv.index("--new-terminal") + 1:]
@@ -726,11 +729,12 @@ def main():
     engine.addImageProvider("xdcall", xd_calls.image_provider())
     ctx = engine.rootContext()
     search = Search(store)
+    start = Start(store, search)
     updater = Updater()
     for name, obj in (("Desk", desk), ("Theme", theme), ("Media", media), ("System", providers["system"]),
                       ("Weather", providers["weather"]), ("GitHub", providers["github"]), ("Network", providers["network"]),
                       ("Storage", providers["storage"]), ("Clipboard", providers["clipboard"]),
-                      ("Notifications", providers["notifications"]), ("Dock", dock), ("Search", search), ("Updater", updater),
+                      ("Notifications", providers["notifications"]), ("Dock", dock), ("Search", search), ("Start", start), ("Updater", updater),
                       ("Audio", providers["audio"]), ("Games", providers["games"]), ("League", providers["league"]),
                       ("DevDash", providers["devdash"]), ("Devices", providers["devices"]), ("Notes", notes),
                       ("XD", providers["xd"]), ("Calls", xd_calls), ("Terminals", providers["terminals"]), ("Buckets", providers["buckets"]), ("Api", providers["api"]),
@@ -744,8 +748,9 @@ def main():
         displays.sync_windows()  # dock turned on or off, or on every screen or just the main one
 
     store.changed.connect(on_config)
-    # Search opens on the dock of the screen you're looking at.
+    # Search and Start open on the dock of the screen you're looking at.
     search.screen_at_cursor = lambda: next((s.number for s in [displays.slot_at_cursor()] if s is not None and s.dock_window is not None), 1)
+    start.screen_at_cursor = search.screen_at_cursor
     # Put the real taskbar and other apps' window frames back however we exit.
     app.aboutToQuit.connect(dock.stop)
     app.aboutToQuit.connect(frames.restore)
@@ -879,6 +884,8 @@ def main():
                 sock.write(str(os.getpid()).encode())  # `--quit` waits for this process to end
                 sock.flush()
                 QTimer.singleShot(0, app.quit)
+            elif word == b"start":
+                start.toggle()
             elif word == b"api":
                 desk.newApi()
             elif word.split(b" ")[0] == b"terminal":
@@ -899,6 +906,9 @@ def main():
     search_cfg = store.config.get("search") or {}
     if dock_settings().get("enabled", True) is not False and search_cfg.get("enabled", True) and search_cfg.get("hotkey"):
         hotkey.add(str(search_cfg["hotkey"]), search.toggle)
+    start_key = str((store.config.get("start") or {}).get("hotkey") or "").strip()
+    if start_key and dock_settings().get("enabled", True) is not False:
+        hotkey.add(start_key, start.toggle)
     app.installNativeEventFilter(hotkey)
 
     updater.notify = lambda title, text: tray.showMessage(title, text)

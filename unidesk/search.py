@@ -134,6 +134,8 @@ class Search(QObject):
 
     resultsChanged = Signal()
     openChanged = Signal()
+    indexChanged = Signal()     # the app list was rebuilt (start.py listens)
+    iconArrived = Signal()      # one more icon finished rendering
     _apps_ready = Signal("QVariantList")
     _icon_ready = Signal(str, str)
 
@@ -197,6 +199,7 @@ class Search(QObject):
         if apps:
             self._apps = list(apps)
             self._apps_at = time.time()
+            self.indexChanged.emit()
         self._run()
 
     # ---- history ---------------------------------------------------------------
@@ -248,6 +251,7 @@ class Search(QObject):
         if not url:
             return
         self._icons[appid] = url
+        self.iconArrived.emit()
         changed = False
         for r in self._results:
             if r.get("appid") == appid:
@@ -255,6 +259,31 @@ class Search(QObject):
                 changed = True
         if changed:
             self.resultsChanged.emit()
+
+    # ---- what the Start menu borrows -------------------------------------------
+
+    def app_list(self) -> list[dict]:
+        """Every app found, as {name, appid}. Empty until the first index lands."""
+        return self._apps
+
+    def icon_for(self, key: str) -> str:
+        """The icon for an AppID or a file path: '' now, and iconArrived later."""
+        return self._icon(key)
+
+    def most_used(self, want: int) -> list[dict]:
+        """The apps opened most often, most first."""
+        by_id = {a["appid"]: a for a in self._apps}
+        rows = []
+        for key, seen in self._history.items():
+            app = by_id.get(key[4:]) if key.startswith("app:") else None
+            if app:
+                rows.append((float(seen.get("count", 0)), float(seen.get("at", 0)), app))
+        rows.sort(key=lambda r: (-r[0], -r[1]))
+        return [app for _, _, app in rows[:want]]
+
+    def note_launch(self, appid: str):
+        """Somebody opened this from Start; it counts the same as from search."""
+        self._remember(f"app:{appid}")
 
     # ---- querying --------------------------------------------------------------
 
@@ -396,7 +425,7 @@ class Search(QObject):
     def focusWindow(self, window):
         """Bring the search window to the front with keyboard focus."""
         try:
-            winapi.activate(int(window.winId()))
+            winapi.activate(int(window.winId()), switch=False)  # our own window; no Alt+Tab flash
         except Exception:
             pass
         window.requestActivate()

@@ -23,6 +23,7 @@ Window {
     readonly property real pillHeight: iconSize + 16
     readonly property real bottomGap: 8
     readonly property bool searchHere: Search.open && Search.screen === slot.number
+    readonly property bool startHere: Start.open && Start.screen === slot.number
 
     screen: {
         var all = Qt.application.screens;
@@ -31,12 +32,16 @@ Window {
     }
     x: slot.rect.x
     width: slot.rect.width
-    height: 700
+    // Tall enough to hold the Start panel above the pill, always: changing the
+    // height would move everything inside the window while the click mask still
+    // described where it used to be, and for a frame the dock would vanish.
+    // Nothing outside the mask is drawn or clickable, so the extra height is free.
+    height: Math.min(slot.rect.height, 880)
     y: slot.rect.y + slot.rect.height - height
     // Shown once it is set up (on top, not taking focus, clipped). Hidden while
     // a fullscreen app covers its screen, unless search was opened here.
     property bool ready: false
-    visible: ready && cfg.enabled !== false && (!slot.suspended || searchHere)
+    visible: ready && cfg.enabled !== false && (!slot.suspended || searchHere || startHere)
     // An auto-hiding dock claims no space: reserving it would leave a strip of
     // empty desktop that a maximised window never covers, which is the opposite
     // of what hiding is for.
@@ -155,6 +160,7 @@ Window {
         if (picker.visible) rects.push([picker.x - 24, picker.y - 24, picker.width + 48, picker.height + 48]);
         if (player.visible) rects.push([player.x - 24, player.y - 24, player.width + 48, player.height + 48]);
         if (search.visible) rects.push([search.x - 40, search.y - 40, search.width + 80, search.height + 60]);
+        if (startMenu.visible) rects.push([startMenu.x - 40, startMenu.y - 40, startMenu.width + 80, startMenu.height + 60]);
         Desk.setMask(dockWin, rects);
     }
     Timer { id: maskTimer; interval: 16; onTriggered: dockWin.updateMask() }
@@ -279,7 +285,7 @@ Window {
 
             // Start
             DockButton {
-                onClicked: Dock.openStart()
+                onClicked: dockWin.cfg.start === "windows" ? Dock.openStart() : Start.toggleOn(dockWin.slot.number)
                 Grid {
                     anchors.centerIn: parent
                     columns: 2; spacing: 2
@@ -868,7 +874,49 @@ Window {
             maskTimer.restart();
         }
     }
-    onActiveChanged: if (!active && searchHere && searchArmed) Search.setOpen(false)
+    onActiveChanged: {
+        if (!active && searchHere && searchArmed) Search.setOpen(false);
+        if (!active && startHere && startArmed) Start.setOpen(false);
+    }
+
+    // ---- Start -----------------------------------------------------------------------
+    StartPanel {
+        id: startMenu
+        objectName: "startPanel"
+        readonly property bool shown: dockWin.startHere
+        // Kept alive while it fades out, or closing would be a disappearance.
+        visible: opacity > 0.01
+        onVisibleChanged: dockWin.updateMask()
+        onHeightChanged: dockWin.updateMask()
+        x: Math.round((dockWin.width - width) / 2)
+        y: pill.y - height - 14
+        opacity: shown ? 1 : 0
+        scale: shown ? 1 : 0.96
+        transformOrigin: Item.Bottom
+        Behavior on opacity { NumberAnimation { duration: 160 * Theme.animationSpeed; easing.type: Easing.OutCubic } }
+        Behavior on scale { NumberAnimation { duration: 260 * Theme.animationSpeed; easing.type: Easing.OutBack; easing.overshoot: 0.6 } }
+    }
+    property bool startArmed: false
+    Timer { id: startArmTimer; interval: 350; onTriggered: dockWin.startArmed = true }
+    Connections {
+        target: Start
+        function onOpenChanged() {
+            if (dockWin.startHere) {
+                // One panel at a time, and nothing else left hanging open.
+                Search.setOpen(false);
+                dockWin.menuApp = null;
+                dockWin.playerOpen = false;
+                dockWin.startArmed = false;
+                startMenu.reset();
+                Dock.setActivatable(dockWin, true);
+                Qt.callLater(function () { Start.focusWindow(dockWin); startMenu.focusInput(); });
+                startArmTimer.restart();
+            } else if (!dockWin.searchHere) {
+                Dock.setActivatable(dockWin, false);
+            }
+            dockWin.updateMask();
+        }
+    }
 
     // ---- player popup ------------------------------------------------------------------
     Item {

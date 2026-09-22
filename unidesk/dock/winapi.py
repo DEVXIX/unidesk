@@ -181,7 +181,14 @@ user32.SwitchToThisWindow.argtypes = [HWND, wintypes.BOOL]
 user32.SwitchToThisWindow.restype = None
 
 
-def activate(hwnd: int):
+def activate(hwnd: int, switch: bool = True):
+    """Bring a window forward.
+
+    `switch` is the last resort below, which is right for another app's window
+    and wrong for one of our own: it is the Alt+Tab switcher, and using it on a
+    window that was simply not activatable a moment ago shows the switch
+    animation - a flash - for nothing.
+    """
     h = HWND(hwnd)
     if user32.IsIconic(h):
         user32.ShowWindow(h, SW_RESTORE)
@@ -208,7 +215,7 @@ def activate(hwnd: int):
     # window manager rather than sent to the window - so it crosses that line.
     # Tried only when the ordinary route has already failed, because it also
     # ignores the animation settings and is abrupt when it is not needed.
-    if user32.GetForegroundWindow() != hwnd:
+    if switch and user32.GetForegroundWindow() != hwnd:
         user32.SwitchToThisWindow(h, True)
 
 
