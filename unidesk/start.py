@@ -183,6 +183,57 @@ def initials(name: str) -> str:
     return (parts[0][:1] + parts[-1][:1]).upper()
 
 
+# ---- where an app really lives ---------------------------------------------------------
+
+
+def _known_folder(guid_text: str) -> str:
+    """The folder behind a KNOWNFOLDERID, e.g. {1AC14E77-...} is System32."""
+    class GUID(ctypes.Structure):
+        _fields_ = [("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort),
+                    ("Data3", ctypes.c_ushort), ("Data4", ctypes.c_ubyte * 8)]
+
+    guid = GUID()
+    if ctypes.windll.ole32.CLSIDFromString(guid_text, ctypes.byref(guid)) != 0:
+        return ""
+    out = ctypes.c_wchar_p()
+    if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(out)) != 0:
+        return ""
+    path = out.value or ""
+    ctypes.windll.ole32.CoTaskMemFree(out)
+    return path
+
+
+def app_path(appid: str) -> str:
+    r"""The file behind an AppID, or '' when there is no file.
+
+    Start's AppIDs come in three shapes:
+
+    * a path, for something the shell found on disk;
+    * a known folder id and a path under it, which is how Windows lists its own
+      programs - "Windows PowerShell" is
+      {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell1.0\powershell.exe,
+      and that GUID is System32;
+    * a packaged app's AUMID, like Microsoft.WindowsTerminal_8wekyb3d8bbwe!App,
+      which is not a file at all and cannot be asked for as administrator.
+    """
+    appid = str(appid or "")
+    if appid[1:3] == ":\\":
+        return appid if Path(appid).exists() else ""
+    if appid.startswith("{") and "}" in appid:
+        folder_id, _, rest = appid.partition("\\")
+        folder = _known_folder(folder_id)
+        if folder and rest:
+            found = Path(folder) / rest
+            if found.exists():
+                return str(found)
+    return ""
+
+
+def _run_elevated(target: str) -> int:
+    """Ask for it as administrator. Windows puts the consent prompt up, not us."""
+    return int(ctypes.windll.shell32.ShellExecuteW(None, "runas", target, None, None, 1))
+
+
 # ---- what you opened, and what turned up ------------------------------------------------
 
 
@@ -562,10 +613,10 @@ class Start(QObject):
     @Slot(str)
     def openLocation(self, appid: str):
         """Show where the app lives - its folder for a program, the apps folder otherwise."""
-        appid = str(appid or "")
+        where = app_path(appid)
         try:
-            if appid[1:3] == ":\\" and Path(appid).exists():
-                subprocess.Popen(["explorer", "/select,", appid])
+            if where:
+                subprocess.Popen(["explorer", "/select,", where])
             else:
                 os.startfile("shell:AppsFolder")
         except OSError as e:
@@ -573,17 +624,22 @@ class Start(QObject):
 
     @Slot(str, result=bool)
     def canRunAsAdmin(self, appid: str) -> bool:
-        """Only a real program on disk can be asked for; Store apps cannot."""
-        return str(appid or "")[1:3] == ":\\"
+        """Only something that is a file can be asked for; a Store app cannot."""
+        return bool(app_path(appid))
 
-    @Slot(str)
-    def runAsAdmin(self, appid: str):
-        if not self.canRunAsAdmin(appid):
-            return
+    @Slot(str, result=bool)
+    def runAsAdmin(self, appid: str) -> bool:
+        where = app_path(appid)
+        if not where:
+            return False
         try:
-            ctypes.windll.shell32.ShellExecuteW(None, "runas", str(appid), None, None, 1)
+            winapi.user32.AllowSetForegroundWindow(-1)
+            # Below 32 means it did not start - most often because the consent
+            # prompt was refused, which is a decision, not a fault.
+            return _run_elevated(where) > 32
         except OSError as e:
             print(f"[unidesk] start: could not run {appid} as administrator: {e}")
+            return False
 
     @Slot(str)
     def uninstall(self, appid: str):

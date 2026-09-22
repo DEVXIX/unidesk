@@ -525,6 +525,7 @@ Item {
 
             ListView {
                 id: found
+                objectName: "startResults"
                 anchors { fill: parent; leftMargin: panel.pad; rightMargin: panel.pad - 8 }
                 clip: true
                 model: panel.searching ? Search.results : []
@@ -608,8 +609,18 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
                         onEntered: panel.current = hit.index
-                        onClicked: panel.openSelected()
+                        onClicked: (e) => {
+                            if (e.button !== Qt.RightButton) { panel.openSelected(); return; }
+                            // Only an app has anything to offer; maths and a web
+                            // search do not.
+                            if (hit.modelData.kind !== "app") return;
+                            panel.current = hit.index;
+                            menu.show(hit, { name: hit.modelData.title, appid: hit.modelData.appid,
+                                             key: hit.modelData.appid },
+                                      Start.isPinned(hit.modelData.appid));
+                        }
                     }
                 }
             }
@@ -666,7 +677,16 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: line.row.kind === "app" ? panel.run(line.row.target) : panel.openFile(line.row.target)
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onClicked: (e) => {
+                if (e.button === Qt.RightButton) {
+                    if (line.row.kind !== "app") return;
+                    menu.show(line, { name: line.row.title, appid: line.row.target, key: line.row.target },
+                              Start.isPinned(line.row.target));
+                    return;
+                }
+                line.row.kind === "app" ? panel.run(line.row.target) : panel.openFile(line.row.target);
+            }
         }
     }
 
